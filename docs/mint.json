@@ -1,8 +1,8 @@
 {
   "name": "Token Usage Metrics",
   "logo": {
-    "dark": "/logo/dark.png",
-    "light": "/logo/light.png"
+    "dark": "logo/dark.svg",
+    "light": "logo/light.svg"
   },
   "favicon": "/favicon.svg",
   "colors": {
@@ -16,35 +16,8 @@
   },
   "topbarLinks": [
     {
-      "name": "Support",
-      "url": "mailto:support@example.com"
-    }
-  ],
-  "topbarCtaButton": {
-    "name": "GitHub",
-    "url": "https://github.com/lazzyms/token_usage_metrics"
-  },
-  "tabs": [
-    {
-      "name": "API Reference",
-      "url": "api-reference"
-    }
-  ],
-  "anchors": [
-    {
-      "name": "Documentation",
-      "icon": "book-open-cover",
-      "url": "https://github.com/lazzyms/token_usage_metrics"
-    },
-    {
-      "name": "Community",
-      "icon": "slack",
-      "url": "https://github.com/lazzyms/token_usage_metrics/discussions"
-    },
-    {
-      "name": "Blog",
-      "icon": "newspaper",
-      "url": "https://github.com/lazzyms/token_usage_metrics"
+      "name": "Issue",
+      "url": "https://github.com/lazzyms/token_usage_metrics/issues"
     }
   ],
   "navigation": [
@@ -58,15 +31,6 @@
         "backends/supabase",
         "coming-soon",
         "contributing"
-      ]
-    },
-    {
-      "group": "API Reference",
-      "pages": [
-        "api-reference/overview",
-        "api-reference/client",
-        "api-reference/models",
-        "api-reference/backends"
       ]
     }
   ],

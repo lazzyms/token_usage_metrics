@@ -4,307 +4,134 @@ description: "How to contribute to Token Usage Metrics"
 icon: "hand-holding-heart"
 ---
 
-## Welcome Contributors!
+## Thanks for considering a contribution
 
-We're excited that you're interested in contributing to Token Usage Metrics! This project is open source and welcomes contributions of all kinds.
+We welcome contributions of all kinds: bug reports, documentation improvements, tests, and code changes. This document explains how to get started and the project's expectations.
 
-## Ways to Contribute
+**Quick links**
 
-<CardGroup cols={2}>
-  <Card title="Report Bugs" icon="bug">
-    Found a bug? Report it on GitHub Issues
-  </Card>
-  <Card title="Suggest Features" icon="lightbulb">
-    Have an idea? Open a feature request
-  </Card>
-  <Card title="Write Code" icon="code">
-    Fix bugs or implement new features
-  </Card>
-  <Card title="Improve Docs" icon="book">
-    Help us improve documentation
-  </Card>
-</CardGroup>
+- Code of Conduct: https://www.contributor-covenant.org/version/2/1/code_of_conduct/
+- Issues: https://github.com/lazzyms/token_usage_metrics/issues
+- Discussions: https://github.com/lazzyms/token_usage_metrics/discussions
 
-## Getting Started
+## Before you start
 
-### 1. Fork and Clone
+1. Search existing issues and discussions — someone may already be working on the same thing.
+2. If you're planning a large change or new feature, open an issue first to discuss the design.
+
+## How to report bugs
+
+When opening an issue, please include:
+
+- A clear and descriptive title
+- What you expected to happen and what actually happened
+- Steps to reproduce (small, copy/pasteable example when possible)
+- Environment information (OS, Python version, backend used)
+- Relevant logs or error messages
+
+Use the `bug report` issue template when possible.
+
+## How to request features
+
+Open a feature request with the following info:
+
+- Problem you're trying to solve
+- Suggested behavior / API
+- Priority (High / Medium / Low)
+- Any relevant constraints (e.g., backend, performance)
+
+Use the `feature request` issue template when possible.
+
+## Development setup
+
+Clone your fork and install dev dependencies:
 
 ```bash
-# Fork the repository on GitHub, then clone your fork
 git clone https://github.com/YOUR_USERNAME/token_usage_metrics.git
 cd token_usage_metrics
-```
 
-### 2. Set Up Development Environment
-
-```bash
-# Install uv if you haven't already
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies
+# Install dependencies using uv (project uses Astral/uv tool)
 uv sync
 
-# Install with all extras for development
+# Install dev extras
 uv sync --all-extras
 ```
 
-### 3. Install Development Tools
+If you prefer `pip`/`venv`, create an environment and install from `pyproject.toml`.
+
+## Coding style
+
+- Follow PEP 8 for Python code
+- Use type hints where appropriate
+- Keep functions small and focused
+- Prefer clear, well-tested implementations over clever ones
+- For formatting and linting, run:
 
 ```bash
-# Install dev dependencies
-uv add --dev ruff mypy pytest pytest-asyncio pytest-cov fakeredis
-```
-
-## Development Workflow
-
-### Running Tests
-
-```bash
-# Run all tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=token_usage_metrics --cov-report=html
-
-# Run specific test file
-uv run pytest tests/test_redis_backend.py -v
-
-# Run specific test
-uv run pytest tests/test_redis_backend.py::test_basic_log -v
-```
-
-### Code Quality
-
-We use several tools to maintain code quality:
-
-```bash
-# Format code with ruff
 uv run ruff format .
-
-# Lint code
 uv run ruff check .
-
-# Fix auto-fixable issues
-uv run ruff check --fix .
-
-# Type checking with mypy
 uv run mypy token_usage_metrics
 ```
 
-### Pre-commit Checks
+## Tests
 
-Before committing, ensure:
-
-1. ✅ All tests pass
-2. ✅ Code is formatted with ruff
-3. ✅ No linting errors
-4. ✅ Type checks pass
-5. ✅ Added tests for new features
-
-## Pull Request Process
-
-<Steps>
-  <Step title="Create a Branch">
-    ```bash
-    git checkout -b feature/your-feature-name
-    # or
-    git checkout -b fix/bug-description
-    ```
-  </Step>
-
-{" "}
-<Step title="Make Your Changes">
-  Write your code, add tests, and update documentation as needed.
-</Step>
-
-{" "}
-<Step title="Run Tests and Checks">
-  ```bash uv run pytest uv run ruff format . uv run ruff check . uv run mypy
-  token_usage_metrics ```
-</Step>
-
-{" "}
-<Step title="Commit Your Changes">
-  ```bash git add . git commit -m "feat: add new feature description" # or git
-  commit -m "fix: fix bug description" ``` Use conventional commit messages: -
-  `feat:` for new features - `fix:` for bug fixes - `docs:` for documentation
-  changes - `test:` for test changes - `refactor:` for code refactoring
-</Step>
-
-  <Step title="Push and Create PR">
-    ```bash
-    git push origin feature/your-feature-name
-    ```
-    
-    Then create a Pull Request on GitHub with:
-    - Clear title describing the change
-    - Description of what changed and why
-    - Link to related issues (if any)
-    - Screenshots (if UI changes)
-  </Step>
-</Steps>
-
-## Code Style Guidelines
-
-### Python Style
-
-- Follow PEP 8
-- Use type hints for all functions
-- Write descriptive docstrings
-- Keep functions focused and small
-- Use async/await for I/O operations
-
-### Example
-
-```python
-async def log_usage(
-    self,
-    project: str,
-    request_type: str,
-    input_tokens: int,
-    output_tokens: int,
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    """
-    Log token usage for a request.
-
-    Args:
-        project: Project identifier
-        request_type: Type of request (e.g., "chat", "embedding")
-        input_tokens: Number of input tokens
-        output_tokens: Number of output tokens
-        metadata: Optional metadata dictionary
-
-    Raises:
-        ValueError: If tokens are negative
-    """
-    if input_tokens < 0 or output_tokens < 0:
-        raise ValueError("Token counts must be non-negative")
-
-    # Implementation...
-```
-
-## Testing Guidelines
-
-### Write Tests For
-
-- ✅ New features
-- ✅ Bug fixes
-- ✅ Edge cases
-- ✅ Error handling
-
-### Test Structure
-
-```python
-import pytest
-from token_usage_metrics import TokenUsageClient
-
-@pytest.mark.asyncio
-async def test_basic_logging():
-    """Test basic token usage logging."""
-    # Arrange
-    client = await TokenUsageClient.init("redis://localhost:6379/0")
-
-    # Act
-    await client.log("test_project", "chat", input_tokens=100, output_tokens=50)
-
-    # Assert
-    events, _ = await client.query(project="test_project")
-    assert len(events) == 1
-    assert events[0].input_tokens == 100
-
-    # Cleanup
-    await client.aclose()
-```
-
-## Adding a New Backend
-
-Want to add support for a new database? Here's how:
-
-<Steps>
-  <Step title="Create Backend Class">
-    Create a new file in `token_usage_metrics/backends/`:
-    
-    ```python
-    # token_usage_metrics/backends/newdb.py
-    from .base import BaseBackend
-    
-    class NewDBBackend(BaseBackend):
-        async def connect(self) -> None:
-            # Implementation
-            pass
-        
-        async def log(self, event: UsageEvent) -> None:
-            # Implementation
-            pass
-        
-        # Implement all abstract methods...
-    ```
-  </Step>
-
-  <Step title="Register Backend">
-    Add to `token_usage_metrics/backends/__init__.py`:
-    
-    ```python
-    from .newdb import NewDBBackend
-    
-    BACKENDS = {
-        "redis": RedisBackend,
-        "postgres": PostgresBackend,
-        "mongodb": MongoDBBackend,
-        "newdb": NewDBBackend,  # Add here
-    }
-    ```
-  </Step>
-
-{" "}
-<Step title="Add Tests">
-  Create `tests/test_newdb_backend.py` with comprehensive tests
-</Step>
-
-  <Step title="Add Documentation">
-    Create `docs/backends/newdb.mdx` with setup and usage instructions
-  </Step>
-</Steps>
-
-## Documentation
-
-Documentation is built with Mintlify. To preview locally:
+- Add tests for new features and bug fixes.
+- Use `pytest` and mark async tests with `pytest.mark.asyncio`.
+- Run tests locally:
 
 ```bash
-cd docs
-npx mintlify dev
+uv run pytest
+uv run pytest --maxfail=1 -q
 ```
 
-Visit `http://localhost:3000` to see your changes.
+## Branching & commits
 
-## Need Help?
+- Create a descriptive branch:
 
-<CardGroup cols={2}>
-  <Card
-    title="GitHub Discussions"
-    icon="comments"
-    href="https://github.com/lazzyms/token_usage_metrics/discussions"
-  >
-    Ask questions and discuss ideas
-  </Card>
-  <Card
-    title="GitHub Issues"
-    icon="circle-exclamation"
-    href="https://github.com/lazzyms/token_usage_metrics/issues"
-  >
-    Report bugs or request features
-  </Card>
-</CardGroup>
+```bash
+git checkout -b feat/short-description
+```
+
+- Use conventional commit messages (examples):
+
+  - `feat: add postgres bulk-upsert`
+  - `fix: handle empty metadata in log()`
+  - `docs: update redis backend examples`
+
+## Pull request checklist
+
+Before requesting review, ensure your PR includes:
+
+- [ ] Updated or new tests
+- [ ] Code is formatted and linted
+- [ ] Type checks pass
+- [ ] Updated documentation (if applicable)
+- [ ] A clear PR description explaining the why and what
+
+Please open a draft PR if the work is ongoing and you want early feedback.
+
+## Adding a new backend
+
+If you want to add support for a new database backend, please follow these steps:
+
+1. Open an issue to discuss requirements and schema design.
+2. Implement a backend class under `token_usage_metrics/backends/` implementing the `Backend` interface.
+3. Add the backend to the backend factory and `BackendType` enum.
+4. Add tests under `tests/` (unit and integration where applicable).
+5. Add a short `docs/backends/<name>.mdx` describing setup and usage.
+
+## Security
+
+If you discover a security vulnerability, please do not open a public issue. Instead, report it privately to the repository owner via security contact or email.
 
 ## Code of Conduct
 
-Please be respectful and inclusive. We follow the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+Be respectful and inclusive. We follow the Contributor Covenant Code of Conduct.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under the MIT License.
+By contributing, you agree your contributions will be licensed under the project's MIT license.
 
 ---
 
-Thank you for contributing to Token Usage Metrics! 🎉
+Thank you — contributions are what make open source great! 🎉
