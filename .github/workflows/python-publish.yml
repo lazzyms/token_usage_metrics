@@ -11,6 +11,12 @@ name: Token Usage Metrics Python Package Publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional version string for display (e.g., v0.1.1)"
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -53,7 +59,8 @@ jobs:
     # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
     environment:
       name: pypi
-      url: https://pypi.org/project/token-usage-metrics/${{ github.event.release.name }}
+      # Use a static project URL so both release and manual runs render cleanly
+      url: https://pypi.org/project/token-usage-metrics/
 
     steps:
       - name: Retrieve release distributions
