@@ -311,4 +311,4 @@ Contributions welcome! Please open an issue or PR on GitHub.
 
 ---
 
-Built with ❤️ for production LLM applications.
+Built with ❤️ by lazzyms
