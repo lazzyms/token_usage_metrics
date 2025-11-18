@@ -32,15 +32,13 @@ jobs:
           enable-cache: false
 
       - name: Build release distributions
-        run: |
-          cd token-usage-metrics
-          uv build
+        run: uv build
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
-          path: token-usage-metrics/dist/
+          path: dist/
 
   pypi-publish:
     runs-on: ubuntu-latest
