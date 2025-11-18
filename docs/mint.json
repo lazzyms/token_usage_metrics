@@ -1,8 +1,8 @@
 {
   "name": "Token Usage Metrics",
   "logo": {
-    "dark": "/logo/dark.svg",
-    "light": "/logo/light.svg"
+    "dark": "/logo/dark.png",
+    "light": "/logo/light.png"
   },
   "favicon": "/favicon.svg",
   "colors": {
@@ -49,33 +49,24 @@
   ],
   "navigation": [
     {
-      "group": "Get Started",
-      "pages": ["introduction", "quickstart", "architecture"]
+      "group": "Documentation",
+      "pages": [
+        "introduction",
+        "backends/redis",
+        "backends/postgres",
+        "backends/mongodb",
+        "backends/supabase",
+        "coming-soon",
+        "contributing"
+      ]
     },
     {
-      "group": "API Documentation",
+      "group": "API Reference",
       "pages": [
         "api-reference/overview",
         "api-reference/client",
         "api-reference/models",
         "api-reference/backends"
-      ]
-    },
-    {
-      "group": "Backends",
-      "pages": [
-        "backends/redis",
-        "backends/postgres",
-        "backends/supabase",
-        "backends/mongodb"
-      ]
-    },
-    {
-      "group": "Advanced",
-      "pages": [
-        "advanced/configuration",
-        "advanced/error-handling",
-        "advanced/performance"
       ]
     }
   ],
