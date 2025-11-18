@@ -1,6 +1,8 @@
 """Main client API for token usage metrics."""
 
+from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from token_usage_metrics.backends.base import Backend
 from token_usage_metrics.backends.mongodb import MongoDBBackend
@@ -37,6 +39,129 @@ class TokenUsageClient:
         cls, settings: Settings | None = None
     ) -> "TokenUsageClient":
         """Create and start a client from settings."""
+        client = cls(settings)
+        await client.start()
+        return client
+
+    @classmethod
+    async def init(
+        cls,
+        connection_string: str | None = None,
+        *,
+        backend: str | None = None,
+        host: str | None = None,
+        port: int | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        database: str | None = None,
+        **kwargs: Any,
+    ) -> "TokenUsageClient":
+        """Create and start a client with simplified initialization.
+
+        Args:
+            connection_string: Full connection URL (e.g., 'redis://localhost:6379/0')
+            backend: Backend type ('redis', 'postgres', 'mongodb')
+            host: Database host
+            port: Database port
+            username: Database username
+            password: Database password
+            database: Database name or number
+            **kwargs: Additional settings (buffer_size, flush_interval, etc.)
+
+        Returns:
+            Started TokenUsageClient instance
+
+        Examples:
+            # Using connection string
+            client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+            # Using individual parameters
+            client = await TokenUsageClient.init(
+                backend="postgres",
+                host="localhost",
+                port=5432,
+                username="user",
+                password="pass",
+                database="token_usage"
+            )
+        """
+        settings_dict: dict[str, Any] = {}
+
+        if connection_string:
+            # Parse connection string
+            parsed = urlparse(connection_string)
+            backend = parsed.scheme
+
+            if backend == "redis":
+                settings_dict["backend"] = BackendType.REDIS
+                settings_dict["redis_url"] = connection_string
+            elif backend in ("postgresql", "postgres"):
+                settings_dict["backend"] = BackendType.POSTGRES
+                settings_dict["postgres_dsn"] = connection_string
+            elif backend == "mongodb":
+                settings_dict["backend"] = BackendType.MONGODB
+                settings_dict["mongodb_url"] = connection_string
+                # Extract database from path
+                if parsed.path and len(parsed.path) > 1:
+                    settings_dict["mongodb_database"] = parsed.path.lstrip("/")
+            else:
+                raise ValueError(f"Unsupported backend in connection string: {backend}")
+        else:
+            # Build connection string from parameters
+            if not backend:
+                raise ValueError("Either connection_string or backend must be provided")
+
+            backend = backend.lower()
+
+            if backend == "redis":
+                settings_dict["backend"] = BackendType.REDIS
+                host = host or "localhost"
+                port = port or 6379
+                database = database or "0"
+
+                if username and password:
+                    settings_dict["redis_url"] = (
+                        f"redis://{username}:{password}@{host}:{port}/{database}"
+                    )
+                else:
+                    settings_dict["redis_url"] = f"redis://{host}:{port}/{database}"
+
+            elif backend in ("postgresql", "postgres"):
+                settings_dict["backend"] = BackendType.POSTGRES
+                host = host or "localhost"
+                port = port or 5432
+                database = database or "token_usage"
+
+                if username and password:
+                    settings_dict["postgres_dsn"] = (
+                        f"postgresql://{username}:{password}@{host}:{port}/{database}"
+                    )
+                else:
+                    settings_dict["postgres_dsn"] = (
+                        f"postgresql://{host}:{port}/{database}"
+                    )
+
+            elif backend == "mongodb":
+                settings_dict["backend"] = BackendType.MONGODB
+                host = host or "localhost"
+                port = port or 27017
+                database = database or "token_usage"
+
+                if username and password:
+                    settings_dict["mongodb_url"] = (
+                        f"mongodb://{username}:{password}@{host}:{port}"
+                    )
+                else:
+                    settings_dict["mongodb_url"] = f"mongodb://{host}:{port}"
+                settings_dict["mongodb_database"] = database
+            else:
+                raise ValueError(f"Unsupported backend: {backend}")
+
+        # Merge additional kwargs
+        settings_dict.update(kwargs)
+
+        # Create settings and client
+        settings = Settings(**settings_dict)
         client = cls(settings)
         await client.start()
         return client
@@ -110,14 +235,40 @@ class TokenUsageClient:
         else:
             raise ValueError(f"Unknown backend type: {self.settings.backend}")
 
-    async def log(self, event: UsageEvent) -> None:
-        """Log a single usage event (async, non-blocking)."""
+    async def log(
+        self,
+        project_name: str,
+        request_type: str,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        metadata: dict[str, Any] | None = None,
+        request_count: int = 1,
+    ) -> None:
+        """Log a single usage event (async, non-blocking).
+
+        Args:
+            project_name: Name of the project/application
+            request_type: Type of request (e.g., 'chat', 'completion', 'embedding')
+            input_tokens: Number of input tokens
+            output_tokens: Number of output tokens
+            metadata: Optional additional metadata
+            request_count: Number of requests (default: 1)
+        """
         if not self._started:
             raise BackendError("Client not started. Call start() first.")
 
         if not self.queue:
             raise BackendError("Queue not initialized")
 
+        event = UsageEvent(
+            project_name=project_name,
+            request_type=request_type,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            metadata=metadata,
+            request_count=request_count,
+        )
         await self.queue.enqueue(event)
 
     async def log_many(self, events: list[UsageEvent]) -> None:
@@ -142,6 +293,45 @@ class TokenUsageClient:
             raise BackendError("Backend not initialized")
 
         filters = filters or UsageFilter()
+        return await self.backend.fetch_raw(filters)
+
+    async def query(
+        self,
+        *,
+        project: str | None = None,
+        request_type: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        limit: int = 100,
+        cursor: str | None = None,
+    ) -> tuple[list[UsageEvent], str | None]:
+        """Query usage events with simplified parameters.
+
+        Args:
+            project: Filter by project name
+            request_type: Filter by request type
+            time_from: Filter events from this timestamp
+            time_to: Filter events until this timestamp
+            limit: Maximum number of events to return
+            cursor: Pagination cursor from previous query
+
+        Returns:
+            Tuple of (events, next_cursor)
+        """
+        if not self._started:
+            raise BackendError("Client not started. Call start() first.")
+
+        if not self.backend:
+            raise BackendError("Backend not initialized")
+
+        filters = UsageFilter(
+            project_name=project,
+            request_type=request_type,
+            time_from=time_from,
+            time_to=time_to,
+            limit=limit,
+            cursor=cursor,
+        )
         return await self.backend.fetch_raw(filters)
 
     async def summary_by_day(
@@ -208,6 +398,101 @@ class TokenUsageClient:
         filters = filters or UsageFilter()
         return await self.backend.timeseries(spec, filters)
 
+    async def aggregate(
+        self,
+        *,
+        group_by: str | None = None,
+        metrics: list[str] | None = None,
+        project: str | None = None,
+        request_type: str | None = None,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+    ) -> list[TimeBucket] | list[SummaryRow]:
+        """Get aggregated metrics with simplified parameters.
+
+        Args:
+            group_by: Group results by 'day', 'project', or 'type' (None for overall)
+            metrics: List of metrics like ['sum_total', 'count_requests', 'avg_total']
+            project: Filter by project name
+            request_type: Filter by request type
+            time_from: Filter events from this timestamp
+            time_to: Filter events until this timestamp
+
+        Returns:
+            List of TimeBucket (for time grouping) or SummaryRow (for other grouping)
+        """
+        if not self._started:
+            raise BackendError("Client not started. Call start() first.")
+
+        if not self.backend:
+            raise BackendError("Backend not initialized")
+
+        # Build AggregateSpec from string metrics
+        from token_usage_metrics.models import (
+            AggregateMetric,
+            GroupByDimension,
+            TimeBucketType,
+        )
+
+        metric_set = set()
+        if metrics:
+            metric_map = {
+                "sum_total": AggregateMetric.SUM_TOTAL,
+                "sum_input": AggregateMetric.SUM_INPUT,
+                "sum_output": AggregateMetric.SUM_OUTPUT,
+                "count_requests": AggregateMetric.COUNT_REQUESTS,
+                "avg_total_per_request": AggregateMetric.AVG_TOTAL_PER_REQUEST,
+            }
+            for m in metrics:
+                if m not in metric_map:
+                    raise ValueError(
+                        f"Unknown metric: {m}. Valid: {list(metric_map.keys())}"
+                    )
+                metric_set.add(metric_map[m])
+        else:
+            # Default metrics
+            metric_set = {AggregateMetric.SUM_TOTAL, AggregateMetric.COUNT_REQUESTS}
+
+        # Build UsageFilter
+        filters = UsageFilter(
+            project_name=project,
+            request_type=request_type,
+            time_from=time_from,
+            time_to=time_to,
+        )
+
+        # Route to appropriate method based on group_by
+        if group_by == "day":
+            spec = AggregateSpec(
+                metrics=metric_set,
+                group_by=GroupByDimension.NONE,
+                bucket=TimeBucketType.DAY,
+            )
+            return await self.backend.summary_by_day(spec, filters)
+        elif group_by == "project":
+            spec = AggregateSpec(
+                metrics=metric_set,
+                group_by=GroupByDimension.PROJECT,
+            )
+            return await self.backend.summary_by_project(spec, filters)
+        elif group_by == "type":
+            spec = AggregateSpec(
+                metrics=metric_set,
+                group_by=GroupByDimension.REQUEST_TYPE,
+            )
+            return await self.backend.summary_by_request_type(spec, filters)
+        elif group_by is None:
+            # Overall aggregate
+            spec = AggregateSpec(
+                metrics=metric_set,
+                group_by=GroupByDimension.NONE,
+            )
+            return await self.backend.summary_by_project(spec, filters)
+        else:
+            raise ValueError(
+                f"Invalid group_by: {group_by}. Valid: 'day', 'project', 'type', or None"
+            )
+
     async def delete_project(self, options: DeleteOptions) -> DeleteResult:
         """Delete usage data for a project."""
         if not self._started:
@@ -216,6 +501,40 @@ class TokenUsageClient:
         if not self.backend:
             raise BackendError("Backend not initialized")
 
+        return await self.backend.delete_project(options)
+
+    async def delete(
+        self,
+        project: str,
+        *,
+        time_from: datetime | None = None,
+        time_to: datetime | None = None,
+        include_aggregates: bool = True,
+    ) -> DeleteResult:
+        """Delete usage data for a project with simplified parameters.
+
+        Args:
+            project: Project name to delete data for
+            time_from: Delete events from this timestamp (None = no lower bound)
+            time_to: Delete events until this timestamp (None = no upper bound)
+            include_aggregates: Also delete aggregated data
+
+        Returns:
+            DeleteResult with counts of deleted records
+        """
+        if not self._started:
+            raise BackendError("Client not started. Call start() first.")
+
+        if not self.backend:
+            raise BackendError("Backend not initialized")
+
+        options = DeleteOptions(
+            project_name=project,
+            time_from=time_from,
+            time_to=time_to,
+            include_aggregates=include_aggregates,
+            simulate=False,
+        )
         return await self.backend.delete_project(options)
 
     async def flush(self, timeout: float | None = None) -> int:
