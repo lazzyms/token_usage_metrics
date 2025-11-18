@@ -4,14 +4,16 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 
 async def main() -> None:
     """Demonstrate core features of the token usage metrics SDK."""
     print("Logging events...")
 
-    # Initialize with connection string - auto-starts the client
-    client = await TokenUsageClient.init("redis://localhost:6379/0")
+    # Initialize with explicit Settings
+    settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
+    client = await TokenUsageClient.from_settings(settings)
 
     try:
         # Log usage events

@@ -1,7 +1,6 @@
 """Abstract backend interface for token usage storage."""
 
 from abc import ABC, abstractmethod
-from typing import Protocol
 
 from token_usage_metrics.models import (
     AggregateSpec,

@@ -25,25 +25,22 @@ uv add token-usage-metrics[postgres]
 
 ### 1. Create Supabase Project
 
-1. Go to [supabase.com](https://supabase.com)
-2. Create a new project
-3. Wait for provisioning to complete
-4. Get your connection string from Settings → Database
+````mdx
+---
+title: Supabase Backend
+description: "Managed PostgreSQL with Supabase"
+icon: "cloud"
+---
 
-### 2. Get Connection String
+## Overview
 
-From your Supabase dashboard:
+Supabase backend uses the same PostgreSQL implementation but leverages Supabase's managed infrastructure. Get all the benefits of PostgreSQL with automatic backups and a dashboard.
 
-**Settings → Database → Connection string → URI**
+## Installation
 
+```bash
+uv add token-usage-metrics[postgres]
 ```
-postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
-```
-
-<Warning>
-  Use the service role key or a secure password. Never commit credentials to
-  version control.
-</Warning>
 
 ## Usage Example
 
@@ -52,11 +49,13 @@ postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/pos
 ```python
 import asyncio
 from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 async def main():
     # Initialize with Supabase connection
     dsn = "postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="supabase", supabase_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log token usage
     await client.log(
@@ -80,7 +79,8 @@ asyncio.run(main())
 ```python
 async def main():
     dsn = "postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="supabase", supabase_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log with custom metadata
     await client.log(
@@ -102,7 +102,8 @@ async def main():
 ```python
 async def main():
     dsn = "postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="supabase", supabase_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log multiple events
     events = [
@@ -132,7 +133,8 @@ from datetime import datetime, timedelta, timezone
 
 async def main():
     dsn = "postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="supabase", supabase_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Query recent events
     events, cursor = await client.query(
@@ -168,7 +170,8 @@ export TUM_FLUSH_INTERVAL=1.0
 ### Using Settings Object
 
 ```python
-from token_usage_metrics import Settings, TokenUsageClient
+from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 settings = Settings(
     backend="supabase",
@@ -184,7 +187,7 @@ settings = Settings(
     postgres_pool_max_size=10,
 )
 
-client = await TokenUsageClient.init(settings=settings)
+client = await TokenUsageClient.from_settings(settings)
 ```
 
 ## Supabase Dashboard
@@ -249,8 +252,7 @@ async def cleanup_old_data(client):
 
 {" "}
 <Accordion title="Store Credentials Securely">
-  Use environment variables: ```python import os settings = Settings(
-  backend="supabase", supabase_dsn=os.getenv("SUPABASE_DSN") ) ```
+  Use environment variables and avoid hardcoding credentials in code examples.
 </Accordion>
 
   <Accordion title="Use Connection Pooler">
@@ -282,3 +284,6 @@ async def cleanup_old_data(client):
 <Card title="Previous: MongoDB" icon="leaf" href="/backends/mongodb">
   MongoDB backend documentation
 </Card>
+````
+
+  </Card>

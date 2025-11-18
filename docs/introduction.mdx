@@ -65,19 +65,21 @@ uv add token-usage-metrics[mongo]
     ```python
     import asyncio
     from token_usage_metrics import TokenUsageClient
+    from token_usage_metrics.config import Settings
 
     async def main():
-        # Initialize client
-        client = await TokenUsageClient.init("redis://localhost:6379/0")
+      # Initialize client with explicit Settings
+      settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
+      client = await TokenUsageClient.from_settings(settings)
 
-        # Log token usage
-        await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+      # Log token usage
+      await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
 
-        # Query events
-        events, _ = await client.query(project="my_app")
-        print(f"Found {len(events)} events")
+      # Query events
+      events, _ = await client.query(project="my_app")
+      print(f"Found {len(events)} events")
 
-        await client.aclose()
+      await client.aclose()
 
     asyncio.run(main())
     ```
@@ -100,40 +102,42 @@ Here's a more comprehensive example with metadata and aggregations:
 import asyncio
 from datetime import datetime, timedelta, timezone
 from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 async def main():
-    # Initialize client
-    client = await TokenUsageClient.init("redis://localhost:6379/0")
+  # Initialize client with explicit Settings
+  settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
+  client = await TokenUsageClient.from_settings(settings)
 
-    # Log multiple events with metadata
-    await client.log(
-        "chatbot", "chat",
-        input_tokens=100, output_tokens=50,
-        metadata={"model": "gpt-4", "user": "alice"}
-    )
+  # Log multiple events with metadata
+  await client.log(
+    "chatbot", "chat",
+    input_tokens=100, output_tokens=50,
+    metadata={"model": "gpt-4", "user": "alice"}
+  )
 
-    await client.log(
-        "chatbot", "embedding",
-        input_tokens=200, output_tokens=0,
-        metadata={"model": "text-embedding-ada-002"}
-    )
+  await client.log(
+    "chatbot", "embedding",
+    input_tokens=200, output_tokens=0,
+    metadata={"model": "text-embedding-ada-002"}
+  )
 
-    # Query all events for the project
-    events, _ = await client.query(project="chatbot")
-    print(f"Total events: {len(events)}")
+  # Query all events for the project
+  events, _ = await client.query(project="chatbot")
+  print(f"Total events: {len(events)}")
 
-    # Get daily aggregates for the last 7 days
-    daily = await client.aggregate(
-        group_by="day",
-        time_from=datetime.now(timezone.utc) - timedelta(days=7)
-    )
+  # Get daily aggregates for the last 7 days
+  daily = await client.aggregate(
+    group_by="day",
+    time_from=datetime.now(timezone.utc) - timedelta(days=7)
+  )
 
-    print("\nDaily Usage:")
-    for bucket in daily:
-        print(f"{bucket.start.date()}: {bucket.metrics}")
+  print("\nDaily Usage:")
+  for bucket in daily:
+    print(f"{bucket.start.date()}: {bucket.metrics}")
 
-    # Clean up
-    await client.aclose()
+  # Clean up
+  await client.aclose()
 
 asyncio.run(main())
 ```

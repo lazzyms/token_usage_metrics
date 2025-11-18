@@ -22,6 +22,7 @@ __version__ = "0.1.0"
 # Primary API - simplified SDK interface
 __all__ = [
     "TokenUsageClient",
+    "Settings",
 ]
 
 # Advanced API - for users needing fine-grained control
@@ -38,3 +39,5 @@ __all_advanced__ = [
     "DeleteOptions",
     "DeleteResult",
 ]
+
+__all__ += __all_advanced__

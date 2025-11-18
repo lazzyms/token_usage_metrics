@@ -14,7 +14,6 @@ from token_usage_metrics.models import (
     AggregateSpec,
     DeleteOptions,
     DeleteResult,
-    GroupByDimension,
     SummaryRow,
     TimeBucket,
     UsageEvent,
@@ -62,7 +61,7 @@ class MongoDBBackend(Backend):
                 "MongoDB backend connected", extra={"database": self.database_name}
             )
 
-        except Exception as e:
+        except PyMongoError as e:
             logger.error(f"Failed to connect to MongoDB: {e}", extra={"error": str(e)})
             raise ConnError(f"MongoDB connection failed: {e}") from e
 
@@ -108,7 +107,7 @@ class MongoDBBackend(Backend):
                 return False
             await self.client.admin.command("ping")
             return True
-        except Exception:
+        except PyMongoError:
             return False
 
     async def log_many(self, events: list[UsageEvent]) -> None:

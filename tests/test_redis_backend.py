@@ -1,6 +1,3 @@
-"""Integration tests for token usage metrics with Redis backend."""
-
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest

@@ -53,7 +53,7 @@ class RedisBackend(Backend):
             )
             await self.client.ping()
             logger.info("Redis backend connected", extra={"url": self.redis_url})
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to connect to Redis: {e}", extra={"error": str(e)})
             raise ConnError(f"Redis connection failed: {e}") from e
 
@@ -71,7 +71,7 @@ class RedisBackend(Backend):
                 return False
             await self.client.ping()
             return True
-        except Exception:
+        except aioredis.RedisError:
             return False
 
     async def log_many(self, events: list[UsageEvent]) -> None:
@@ -90,7 +90,7 @@ class RedisBackend(Backend):
                 extra={"count": len(events)},
             )
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to store events: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to store events: {e}") from e
 
@@ -246,7 +246,7 @@ class RedisBackend(Backend):
 
             return events, next_cursor
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to fetch events: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to fetch events: {e}") from e
 
@@ -291,7 +291,7 @@ class RedisBackend(Backend):
         try:
             parts = cursor.split(":")
             return {"day": datetime.fromisoformat(parts[0])}
-        except Exception:
+        except (ValueError, IndexError):
             return None
 
     def _generate_cursor(self, day: datetime, last_event: UsageEvent | None) -> str:
@@ -349,7 +349,7 @@ class RedisBackend(Backend):
 
             return buckets
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to get daily summary: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to get daily summary: {e}") from e
 
@@ -429,7 +429,7 @@ class RedisBackend(Backend):
 
             return rows
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to get project summary: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to get project summary: {e}") from e
 
@@ -511,7 +511,7 @@ class RedisBackend(Backend):
 
             return rows
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(
                 f"Failed to get request type summary: {e}", extra={"error": str(e)}
             )
@@ -613,7 +613,7 @@ class RedisBackend(Backend):
                 simulated=False,
             )
 
-        except Exception as e:
+        except aioredis.RedisError as e:
             logger.error(f"Failed to delete project: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to delete project: {e}") from e
 

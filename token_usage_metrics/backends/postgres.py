@@ -14,7 +14,6 @@ from token_usage_metrics.models import (
     AggregateSpec,
     DeleteOptions,
     DeleteResult,
-    GroupByDimension,
     SummaryRow,
     TimeBucket,
     UsageEvent,
@@ -55,7 +54,7 @@ class PostgresBackend(Backend):
 
             logger.info("Postgres backend connected")
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to connect to Postgres: {e}", extra={"error": str(e)})
             raise ConnError(f"Postgres connection failed: {e}") from e
 
@@ -158,7 +157,7 @@ class PostgresBackend(Backend):
             async with self.pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
             return True
-        except Exception:
+        except asyncpg.PostgresError:
             return False
 
     async def log_many(self, events: list[UsageEvent]) -> None:
@@ -222,7 +221,7 @@ class PostgresBackend(Backend):
                 f"Stored {len(events)} events in Postgres", extra={"count": len(events)}
             )
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to store events: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to store events: {e}") from e
 
@@ -298,7 +297,7 @@ class PostgresBackend(Backend):
 
             return events, next_cursor
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to fetch events: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to fetch events: {e}") from e
 
@@ -370,7 +369,7 @@ class PostgresBackend(Backend):
 
             return buckets
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to get daily summary: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to get daily summary: {e}") from e
 
@@ -442,7 +441,7 @@ class PostgresBackend(Backend):
 
             return summaries
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to get project summary: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to get project summary: {e}") from e
 
@@ -514,7 +513,7 @@ class PostgresBackend(Backend):
 
             return summaries
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(
                 f"Failed to get request type summary: {e}", extra={"error": str(e)}
             )
@@ -628,7 +627,7 @@ class PostgresBackend(Backend):
                     simulated=False,
                 )
 
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error(f"Failed to delete project: {e}", extra={"error": str(e)})
             raise BackendError(f"Failed to delete project: {e}") from e
 

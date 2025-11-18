@@ -53,6 +53,7 @@ docker run -d -p 27017:27017 \
   </Tab>
 
 {" "}
+
 <Tab title="AWS DocumentDB">
   ```bash
   mongodb://user:pass@docdb-cluster.cluster-xxx.region.docdb.amazonaws.com:27017/?ssl=true&replicaSet=rs0
@@ -72,7 +73,8 @@ docker run -d -p 27017:27017 \
 
 ```python
 import asyncio
-from token_usage_metrics import TokenUsageClient, Settings
+from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 async def main():
     # Initialize with MongoDB
@@ -81,7 +83,7 @@ async def main():
         mongodb_url="mongodb://localhost:27017",
         mongodb_database="token_usage"
     )
-    client = await TokenUsageClient.init(settings=settings)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log token usage
     await client.log(
@@ -109,7 +111,7 @@ async def main():
         mongodb_url="mongodb://localhost:27017",
         mongodb_database="token_usage"
     )
-    client = await TokenUsageClient.init(settings=settings)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log with custom metadata
     await client.log(
@@ -135,7 +137,7 @@ async def main():
         mongodb_url="mongodb://localhost:27017",
         mongodb_database="token_usage"
     )
-    client = await TokenUsageClient.init(settings=settings)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log multiple events
     events = [
@@ -169,7 +171,7 @@ async def main():
         mongodb_url="mongodb://localhost:27017",
         mongodb_database="token_usage"
     )
-    client = await TokenUsageClient.init(settings=settings)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Query recent events
     events, cursor = await client.query(
@@ -206,7 +208,8 @@ export TUM_FLUSH_INTERVAL=1.0
 ### Using Settings Object
 
 ```python
-from token_usage_metrics import Settings, TokenUsageClient
+from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 settings = Settings(
     backend="mongodb",
@@ -223,7 +226,7 @@ settings = Settings(
     mongodb_min_pool_size=1,
 )
 
-client = await TokenUsageClient.init(settings=settings)
+client = await TokenUsageClient.from_settings(settings)
 ```
 
 ## Data Retention

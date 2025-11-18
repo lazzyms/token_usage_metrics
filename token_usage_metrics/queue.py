@@ -201,7 +201,9 @@ class AsyncEventQueue:
                         f"Flushed {len(batch)} events",
                         extra={"batch_size": len(batch), "total_flushed": flushed},
                     )
-                except Exception as e:
+                except (
+                    Exception
+                ) as e:  # noqa: B902 - intentional: propagate unexpected callback failures
                     self.circuit_breaker.record_failure()
                     logger.error(
                         f"Flush callback failed: {e}",
@@ -236,7 +238,9 @@ class AsyncEventQueue:
                                 f"Background flush completed: {flushed} events",
                                 extra={"flushed": flushed},
                             )
-                    except Exception as e:
+                    except (
+                        Exception
+                    ) as e:  # noqa: B902 - expected: we don't want background errors to crash the flusher
                         logger.error(
                             f"Background flush failed: {e}",
                             extra={"error": str(e)},
@@ -245,7 +249,9 @@ class AsyncEventQueue:
             except asyncio.CancelledError:
                 logger.info("Background flusher cancelled")
                 break
-            except Exception as e:
+            except (
+                Exception
+            ) as e:  # noqa: B902 - guard the background loop from unexpected errors
                 logger.exception(f"Unexpected error in background flusher: {e}")
 
         logger.info("Background flusher stopped")

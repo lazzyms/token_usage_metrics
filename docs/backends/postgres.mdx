@@ -52,6 +52,7 @@ docker run -d -p 5432:5432 \
   </Tab>
 
 {" "}
+
 <Tab title="Google Cloud SQL">
   ```bash
   postgresql://user:pass@/token_usage?host=/cloudsql/project:region:instance ```
@@ -71,11 +72,13 @@ docker run -d -p 5432:5432 \
 ```python
 import asyncio
 from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 async def main():
-    # Initialize with PostgreSQL
-    dsn = "postgresql://user:password@localhost:5432/token_usage"
-    client = await TokenUsageClient.init(dsn)
+  # Initialize with PostgreSQL
+  dsn = "postgresql://user:password@localhost:5432/token_usage"
+  settings = Settings(backend="postgres", postgres_dsn=dsn)
+  client = await TokenUsageClient.from_settings(settings)
 
     # Log token usage
     await client.log(
@@ -99,7 +102,8 @@ asyncio.run(main())
 ```python
 async def main():
     dsn = "postgresql://user:password@localhost:5432/token_usage"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="postgres", postgres_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log with custom metadata
     await client.log(
@@ -121,7 +125,8 @@ async def main():
 ```python
 async def main():
     dsn = "postgresql://user:password@localhost:5432/token_usage"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="postgres", postgres_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Log multiple events
     events = [
@@ -151,7 +156,8 @@ from datetime import datetime, timedelta, timezone
 
 async def main():
     dsn = "postgresql://user:password@localhost:5432/token_usage"
-    client = await TokenUsageClient.init(dsn)
+    settings = Settings(backend="postgres", postgres_dsn=dsn)
+    client = await TokenUsageClient.from_settings(settings)
 
     # Query recent events
     events, cursor = await client.query(
@@ -187,7 +193,8 @@ export TUM_FLUSH_INTERVAL=1.0
 ### Using Settings Object
 
 ```python
-from token_usage_metrics import Settings, TokenUsageClient
+from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
 
 settings = Settings(
     backend="postgres",
@@ -203,7 +210,7 @@ settings = Settings(
     postgres_pool_max_size=10,
 )
 
-client = await TokenUsageClient.init(settings=settings)
+client = await TokenUsageClient.from_settings(settings)
 ```
 
 ## Data Retention
@@ -245,6 +252,7 @@ async def cleanup_old_data(client):
   </Accordion>
 
 {" "}
+
 <Accordion title="Regular Maintenance">
   Run VACUUM and ANALYZE periodically: ```sql VACUUM ANALYZE usage_events;
   VACUUM ANALYZE daily_aggregates; ```
