@@ -1,0 +1,492 @@
+---
+title: Advanced Configuration
+description: "Complete configuration reference for Token Usage Metrics"
+icon: "sliders"
+---
+
+## Configuration Methods
+
+Token Usage Metrics can be configured in three ways:
+
+<CardGroup cols={3}>
+  <Card title="Environment Variables" icon="file">
+    Prefix with `TUM_`
+  </Card>
+  <Card title="Settings Object" icon="code">
+    Programmatic configuration
+  </Card>
+  <Card title=".env File" icon="file-lines">
+    Load from file
+  </Card>
+</CardGroup>
+
+## Complete Settings Reference
+
+### Backend Selection
+
+<ParamField path="backend" type="BackendType" default="redis">
+  Storage backend: `redis`, `postgres`, `supabase`, or `mongodb`
+</ParamField>
+
+```python
+settings = Settings(backend="redis")
+```
+
+```bash
+export TUM_BACKEND=redis
+```
+
+### Redis Settings
+
+<ParamField path="redis_url" type="string" default="redis://localhost:6379/0">
+  Redis connection URL
+</ParamField>
+
+<ParamField path="redis_pool_size" type="int" default={10}>
+  Connection pool size
+</ParamField>
+
+<ParamField path="redis_socket_timeout" type="float" default={5.0}>
+  Socket timeout in seconds
+</ParamField>
+
+<ParamField path="redis_socket_connect_timeout" type="float" default={5.0}>
+  Connection timeout in seconds
+</ParamField>
+
+<ParamField path="redis_ssl" type="bool" default={false}>
+  Enable SSL/TLS
+</ParamField>
+
+<ParamField path="redis_ssl_cert_reqs" type="string" default="required">
+  SSL certificate requirements: `required`, `optional`, or `none`
+</ParamField>
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    redis_pool_size=10,
+    redis_socket_timeout=5.0,
+    redis_socket_connect_timeout=5.0,
+    redis_ssl=False,
+    redis_ssl_cert_reqs="required"
+)
+```
+
+### PostgreSQL Settings
+
+<ParamField path="postgres_dsn" type="string">
+  PostgreSQL connection DSN
+</ParamField>
+
+<ParamField path="postgres_pool_min_size" type="int" default={2}>
+  Minimum pool size
+</ParamField>
+
+<ParamField path="postgres_pool_max_size" type="int" default={10}>
+  Maximum pool size
+</ParamField>
+
+<ParamField path="postgres_command_timeout" type="float" default={30.0}>
+  Command timeout in seconds
+</ParamField>
+
+<ParamField path="postgres_connect_timeout" type="float" default={10.0}>
+  Connection timeout in seconds
+</ParamField>
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+    postgres_pool_min_size=2,
+    postgres_pool_max_size=10,
+    postgres_command_timeout=30.0,
+    postgres_connect_timeout=10.0
+)
+```
+
+### Supabase Settings
+
+<ParamField path="supabase_dsn" type="string">
+  Supabase PostgreSQL connection DSN
+</ParamField>
+
+<Info>
+  Supabase uses the same settings as PostgreSQL. Use `supabase_dsn` instead of
+  `postgres_dsn`.
+</Info>
+
+```python
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://postgres:pass@db.project.supabase.co:5432/postgres",
+    postgres_pool_max_size=10
+)
+```
+
+### MongoDB Settings
+
+<ParamField
+  path="mongodb_url"
+  type="string"
+  default="mongodb://localhost:27017"
+>
+  MongoDB connection URL
+</ParamField>
+
+<ParamField path="mongodb_database" type="string" default="token_usage">
+  Database name
+</ParamField>
+
+<ParamField path="mongodb_max_pool_size" type="int" default={10}>
+  Maximum pool size
+</ParamField>
+
+<ParamField path="mongodb_min_pool_size" type="int" default={1}>
+  Minimum pool size
+</ParamField>
+
+<ParamField path="mongodb_server_selection_timeout" type="float" default={5.0}>
+  Server selection timeout in seconds
+</ParamField>
+
+<ParamField path="mongodb_socket_timeout" type="float" default={5.0}>
+  Socket timeout in seconds
+</ParamField>
+
+```python
+settings = Settings(
+    backend="mongodb",
+    mongodb_url="mongodb://localhost:27017",
+    mongodb_database="token_usage",
+    mongodb_max_pool_size=10,
+    mongodb_min_pool_size=1,
+    mongodb_server_selection_timeout=5.0,
+    mongodb_socket_timeout=5.0
+)
+```
+
+### Queue & Buffering
+
+<ParamField path="buffer_size" type="int" default={1000}>
+  In-memory event buffer size (1-100000)
+</ParamField>
+
+<ParamField path="flush_interval" type="float" default={1.0}>
+  Auto-flush interval in seconds (0.1-60.0)
+</ParamField>
+
+<ParamField path="flush_batch_size" type="int" default={200}>
+  Events per flush batch (1-10000)
+</ParamField>
+
+<ParamField path="drop_policy" type="string" default="oldest">
+  Buffer overflow policy: `oldest` or `newest`
+</ParamField>
+
+```python
+settings = Settings(
+    buffer_size=1000,
+    flush_interval=1.0,
+    flush_batch_size=200,
+    drop_policy="oldest"
+)
+```
+
+### Resilience
+
+<ParamField path="max_retries" type="int" default={3}>
+  Maximum retry attempts (0-10)
+</ParamField>
+
+<ParamField path="retry_backoff_base" type="float" default={0.5}>
+  Base backoff for retries in seconds
+</ParamField>
+
+<ParamField path="retry_backoff_max" type="float" default={10.0}>
+  Maximum backoff in seconds
+</ParamField>
+
+<ParamField path="circuit_breaker_threshold" type="int" default={5}>
+  Failures before opening circuit (1-100)
+</ParamField>
+
+<ParamField path="circuit_breaker_timeout" type="float" default={60.0}>
+  Circuit breaker timeout in seconds
+</ParamField>
+
+```python
+settings = Settings(
+    max_retries=3,
+    retry_backoff_base=0.5,
+    retry_backoff_max=10.0,
+    circuit_breaker_threshold=5,
+    circuit_breaker_timeout=60.0
+)
+```
+
+### Retention
+
+<ParamField path="default_ttl_days" type="int" default={0}>
+  Default TTL in days (0 = no expiration)
+</ParamField>
+
+<Info>
+  TTL enforcement depends on backend. Redis: manual cleanup, PostgreSQL/MongoDB:
+  application-level or DB features
+</Info>
+
+```python
+settings = Settings(
+    default_ttl_days=90  # Delete after 90 days
+)
+```
+
+### Logging
+
+<ParamField path="log_level" type="string" default="INFO">
+  Log level: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`
+</ParamField>
+
+<ParamField path="structured_logging" type="bool" default={true}>
+  Enable JSON structured logging
+</ParamField>
+
+```python
+settings = Settings(
+    log_level="DEBUG",
+    structured_logging=True
+)
+```
+
+## Environment Variables
+
+All settings can be configured via environment variables with the `TUM_` prefix:
+
+```bash
+# Backend
+export TUM_BACKEND=redis
+
+# Redis
+export TUM_REDIS_URL=redis://localhost:6379/0
+export TUM_REDIS_POOL_SIZE=10
+export TUM_REDIS_SOCKET_TIMEOUT=5.0
+
+# PostgreSQL
+export TUM_POSTGRES_DSN=postgresql://user:pass@localhost:5432/token_usage
+export TUM_POSTGRES_POOL_MAX_SIZE=10
+
+# Supabase
+export TUM_SUPABASE_DSN=postgresql://postgres:pass@db.project.supabase.co:5432/postgres
+
+# MongoDB
+export TUM_MONGODB_URL=mongodb://localhost:27017
+export TUM_MONGODB_DATABASE=token_usage
+export TUM_MONGODB_MAX_POOL_SIZE=10
+
+# Queue
+export TUM_BUFFER_SIZE=1000
+export TUM_FLUSH_INTERVAL=1.0
+export TUM_FLUSH_BATCH_SIZE=200
+export TUM_DROP_POLICY=oldest
+
+# Resilience
+export TUM_MAX_RETRIES=3
+export TUM_CIRCUIT_BREAKER_THRESHOLD=5
+export TUM_CIRCUIT_BREAKER_TIMEOUT=60.0
+
+# Logging
+export TUM_LOG_LEVEL=INFO
+export TUM_STRUCTURED_LOGGING=true
+```
+
+## Configuration Profiles
+
+### Development
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    buffer_size=100,
+    flush_interval=0.1,  # Fast feedback
+    log_level="DEBUG",
+    structured_logging=False  # Human-readable logs
+)
+```
+
+### Production
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://prod-redis:6379/0",
+    redis_pool_size=20,
+    buffer_size=1000,
+    flush_interval=1.0,
+    flush_batch_size=200,
+    max_retries=3,
+    circuit_breaker_threshold=5,
+    log_level="INFO",
+    structured_logging=True
+)
+```
+
+### High-Throughput
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    redis_pool_size=30,
+    buffer_size=5000,
+    flush_interval=2.0,
+    flush_batch_size=1000,
+    drop_policy="oldest",
+    log_level="WARNING"
+)
+```
+
+### Low-Latency
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    buffer_size=500,
+    flush_interval=0.5,
+    flush_batch_size=50,
+    log_level="INFO"
+)
+```
+
+### Long-Term Storage
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+    postgres_pool_max_size=20,
+    buffer_size=2000,
+    flush_batch_size=500,
+    default_ttl_days=0,  # Keep forever
+    log_level="INFO"
+)
+```
+
+## Loading from .env File
+
+Create a `.env` file:
+
+```bash
+TUM_BACKEND=redis
+TUM_REDIS_URL=redis://localhost:6379/0
+TUM_BUFFER_SIZE=1000
+TUM_LOG_LEVEL=INFO
+```
+
+Load using python-dotenv:
+
+```python
+from dotenv import load_dotenv
+from token_usage_metrics import Settings
+
+load_dotenv()
+settings = Settings()  # Automatically loads from environment
+```
+
+## Dynamic Configuration
+
+### Update at Runtime
+
+<Warning>
+  Most settings cannot be changed after client initialization. Create a new
+  client for different settings.
+</Warning>
+
+```python
+# Initial client
+client1 = await TokenUsageClient.init("redis://localhost:6379/0")
+
+# Different configuration requires new client
+client2 = await TokenUsageClient.init(
+    "redis://localhost:6379/0",
+    buffer_size=2000
+)
+```
+
+### Per-Environment Configuration
+
+```python
+import os
+from token_usage_metrics import Settings
+
+env = os.getenv("ENVIRONMENT", "development")
+
+if env == "production":
+    settings = Settings(
+        backend="postgres",
+        postgres_dsn=os.getenv("DATABASE_URL"),
+        buffer_size=1000
+    )
+else:
+    settings = Settings(
+        backend="redis",
+        redis_url="redis://localhost:6379/0",
+        buffer_size=100,
+        log_level="DEBUG"
+    )
+```
+
+## Validation
+
+Settings are validated using Pydantic:
+
+```python
+try:
+    settings = Settings(
+        buffer_size=999999  # Too large
+    )
+except ValueError as e:
+    print(f"Invalid setting: {e}")
+```
+
+Common validation errors:
+
+- `buffer_size` must be 1-100000
+- `flush_interval` must be 0.1-60.0
+- `max_retries` must be 0-10
+- `log_level` must be valid level
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Environment Variables in Production">
+    Keep secrets out of code: ```python settings = Settings() # Loads from
+    environment ```
+  </Accordion>
+
+  <Accordion title="Tune Buffer Size for Your Workload">
+    - High throughput: 2000-5000 - Normal: 1000 - Low memory: 100-500
+  </Accordion>
+
+  <Accordion title="Configure Connection Pools">
+    Match pool size to your concurrency: ```python # 10 concurrent operations
+    settings = Settings(redis_pool_size=10) ```
+  </Accordion>
+
+  <Accordion title="Enable Structured Logging in Production">
+    Makes logs machine-readable: ```python settings =
+    Settings(structured_logging=True) ```
+  </Accordion>
+</AccordionGroup>
+
+<Card
+  title="Next: Error Handling"
+  icon="triangle-exclamation"
+  href="/advanced/error-handling"
+>
+  Learn about error handling and recovery
+</Card>

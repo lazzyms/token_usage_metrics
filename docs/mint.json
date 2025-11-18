@@ -1,0 +1,85 @@
+{
+  "name": "Token Usage Metrics",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#0D9373",
+    "light": "#07C983",
+    "dark": "#0D9373",
+    "anchors": {
+      "from": "#0D9373",
+      "to": "#07C983"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "Support",
+      "url": "mailto:support@example.com"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "GitHub",
+    "url": "https://github.com/lazzyms/token_usage_metrics"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api-reference"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "Documentation",
+      "icon": "book-open-cover",
+      "url": "https://github.com/lazzyms/token_usage_metrics"
+    },
+    {
+      "name": "Community",
+      "icon": "slack",
+      "url": "https://github.com/lazzyms/token_usage_metrics/discussions"
+    },
+    {
+      "name": "Blog",
+      "icon": "newspaper",
+      "url": "https://github.com/lazzyms/token_usage_metrics"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Get Started",
+      "pages": ["introduction", "quickstart", "architecture"]
+    },
+    {
+      "group": "API Documentation",
+      "pages": [
+        "api-reference/overview",
+        "api-reference/client",
+        "api-reference/models",
+        "api-reference/backends"
+      ]
+    },
+    {
+      "group": "Backends",
+      "pages": [
+        "backends/redis",
+        "backends/postgres",
+        "backends/supabase",
+        "backends/mongodb"
+      ]
+    },
+    {
+      "group": "Advanced",
+      "pages": [
+        "advanced/configuration",
+        "advanced/error-handling",
+        "advanced/performance"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/lazzyms/token_usage_metrics"
+  }
+}

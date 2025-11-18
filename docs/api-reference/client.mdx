@@ -1,0 +1,471 @@
+---
+title: TokenUsageClient API
+description: "Complete reference for the TokenUsageClient class"
+---
+
+## TokenUsageClient
+
+Main client for logging and querying token usage metrics.
+
+### Initialization
+
+<Tabs>
+  <Tab title="Factory Method (Recommended)">
+    ```python # From connection string client = await
+    TokenUsageClient.init("redis://localhost:6379/0") # With additional options
+    client = await TokenUsageClient.init( "redis://localhost:6379/0",
+    buffer_size=500, flush_interval=2.0 ) ```
+  </Tab>
+
+  <Tab title="From Settings">
+    ```python from token_usage_metrics import TokenUsageClient, Settings
+    settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
+    client = await TokenUsageClient.from_settings(settings) ```
+  </Tab>
+
+  <Tab title="Context Manager">
+    ```python async with TokenUsageClient(settings) as client: await
+    client.log(event) # Automatically flushes and closes ```
+  </Tab>
+
+  <Tab title="Direct Initialization">
+    ```python client = TokenUsageClient(settings) await client.start() try:
+    await client.log(event) finally: await client.aclose() ```
+  </Tab>
+</Tabs>
+
+## Write Operations
+
+### log()
+
+Log a single usage event (async, non-blocking).
+
+<ParamField path="project" type="string" required>
+  Project name (1-128 characters)
+</ParamField>
+
+<ParamField path="request_type" type="string" required>
+  Request type identifier (1-64 characters)
+</ParamField>
+
+<ParamField path="input_tokens" type="int" required>
+  Number of input tokens (≥ 0)
+</ParamField>
+
+<ParamField path="output_tokens" type="int" required>
+  Number of output tokens (≥ 0)
+</ParamField>
+
+<ParamField path="request_count" type="int" default={1}>
+  Number of requests (≥ 1)
+</ParamField>
+
+<ParamField path="metadata" type="dict" default={null}>
+  Optional metadata (max 4KB JSON)
+</ParamField>
+
+```python
+await client.log(
+    "my_app",
+    "chat",
+    input_tokens=100,
+    output_tokens=50,
+    metadata={"model": "gpt-4"}
+)
+```
+
+### log_many()
+
+Log multiple usage events in batch.
+
+<ParamField path="events" type="list[UsageEvent]" required>
+  List of usage events to log
+</ParamField>
+
+```python
+events = [
+    UsageEvent(project_name="app", request_type="chat",
+               input_tokens=100, output_tokens=50),
+    UsageEvent(project_name="app", request_type="completion",
+               input_tokens=200, output_tokens=100)
+]
+await client.log_many(events)
+```
+
+### flush()
+
+Flush all pending events to backend. Returns number of events flushed.
+
+<ParamField path="timeout" type="float | None" default={None}>
+  Maximum time to wait for flush to complete (seconds)
+</ParamField>
+
+<ResponseField name="return" type="int">
+  Number of events successfully flushed
+</ResponseField>
+
+```python
+flushed = await client.flush(timeout=5.0)
+print(f"Flushed {flushed} events")
+```
+
+## Read Operations
+
+### query()
+
+Query raw usage events with filters.
+
+<ParamField path="project" type="string">
+  Filter by project name
+</ParamField>
+
+<ParamField path="request_type" type="string">
+  Filter by request type
+</ParamField>
+
+<ParamField path="time_from" type="datetime">
+  Filter events after this time (UTC)
+</ParamField>
+
+<ParamField path="time_to" type="datetime">
+  Filter events before this time (UTC)
+</ParamField>
+
+<ParamField path="limit" type="int" default={100}>
+  Maximum results (1-10000)
+</ParamField>
+
+<ParamField path="cursor" type="string">
+  Pagination cursor from previous query
+</ParamField>
+
+<ResponseField name="return" type="tuple[list[UsageEvent], str | None]">
+  Tuple of (events, next_cursor)
+</ResponseField>
+
+```python
+# Basic query
+events, cursor = await client.query(project="my_app")
+
+# With filters
+from datetime import datetime, timedelta, timezone
+
+time_from = datetime.now(timezone.utc) - timedelta(days=7)
+events, cursor = await client.query(
+    project="my_app",
+    request_type="chat",
+    time_from=time_from,
+    limit=100
+)
+
+# Pagination
+if cursor:
+    more_events, next_cursor = await client.query(cursor=cursor, limit=100)
+```
+
+### fetch_raw()
+
+<Warning>Advanced API - prefer using `query()` for simpler interface</Warning>
+
+Fetch raw usage events with UsageFilter object.
+
+<ParamField path="filters" type="UsageFilter" required>
+  Filter specification object
+</ParamField>
+
+<ResponseField name="return" type="tuple[list[UsageEvent], str | None]">
+  Tuple of (events, next_cursor)
+</ResponseField>
+
+```python
+from token_usage_metrics.models import UsageFilter
+
+filters = UsageFilter(
+    project_name="my_app",
+    request_type="chat",
+    limit=100
+)
+
+events, cursor = await client.fetch_raw(filters)
+```
+
+## Aggregation Operations
+
+### aggregate()
+
+Get aggregated metrics with grouping.
+
+<ParamField path="group_by" type="string">
+  Grouping dimension: "day", "project", "type", or None for overall
+</ParamField>
+
+<ParamField path="metrics" type="list[str]">
+  List of metrics to compute. Defaults to all metrics.
+</ParamField>
+
+<ParamField path="project" type="string">
+  Filter by project name
+</ParamField>
+
+<ParamField path="request_type" type="string">
+  Filter by request type
+</ParamField>
+
+<ParamField path="time_from" type="datetime">
+  Filter events after this time (UTC)
+</ParamField>
+
+<ParamField path="time_to" type="datetime">
+  Filter events before this time (UTC)
+</ParamField>
+
+<ResponseField name="return" type="list[TimeBucket] | list[SummaryRow]">
+  List of time buckets (if group_by="day") or summary rows
+</ResponseField>
+
+```python
+# Daily aggregates
+daily = await client.aggregate(group_by="day")
+for bucket in daily:
+    print(f"{bucket.start.date()}: {bucket.metrics}")
+
+# Project-level aggregates
+projects = await client.aggregate(group_by="project")
+for row in projects:
+    print(f"{row.group_keys['project_name']}: {row.metrics['sum_total']}")
+
+# Custom metrics
+daily = await client.aggregate(
+    group_by="day",
+    metrics=["sum_total", "count_requests"],
+    time_from=datetime.now(timezone.utc) - timedelta(days=30)
+)
+```
+
+### summary_by_day()
+
+<Warning>
+  Advanced API - prefer using `aggregate(group_by="day")` for simpler interface
+</Warning>
+
+Get time-bucketed aggregates by day for time-series graphs.
+
+<ParamField path="spec" type="AggregateSpec" required>
+  Aggregate specification
+</ParamField>
+
+<ParamField path="filters" type="UsageFilter" required>
+  Filter parameters
+</ParamField>
+
+<ResponseField name="return" type="list[TimeBucket]">
+  List of time buckets with metrics
+</ResponseField>
+
+```python
+from token_usage_metrics.models import AggregateSpec, AggregateMetric, UsageFilter
+
+spec = AggregateSpec(
+    metrics={
+        AggregateMetric.SUM_TOTAL,
+        AggregateMetric.COUNT_REQUESTS,
+        AggregateMetric.AVG_TOTAL_PER_REQUEST,
+    }
+)
+
+filters = UsageFilter(project_name="my_app")
+buckets = await client.summary_by_day(spec, filters)
+
+for bucket in buckets:
+    print(f"{bucket.start.date()}: {bucket.metrics}")
+```
+
+### summary_by_project()
+
+Get aggregated summary grouped by project.
+
+```python
+summaries = await client.summary_by_project(spec, filters)
+
+for summary in summaries:
+    project = summary.group_keys["project_name"]
+    total = summary.metrics["sum_total"]
+    print(f"{project}: {total} tokens")
+```
+
+### summary_by_request_type()
+
+Get aggregated summary grouped by request type.
+
+```python
+summaries = await client.summary_by_request_type(spec, filters)
+
+for summary in summaries:
+    req_type = summary.group_keys["request_type"]
+    count = summary.metrics["count_requests"]
+    print(f"{req_type}: {count} requests")
+```
+
+## Deletion Operations
+
+### delete()
+
+Delete usage data for a project.
+
+<ParamField path="project" type="string" required>
+  Project name to delete
+</ParamField>
+
+<ParamField path="time_from" type="datetime">
+  Optional start of time range
+</ParamField>
+
+<ParamField path="time_to" type="datetime">
+  Optional end of time range
+</ParamField>
+
+<ParamField path="include_aggregates" type="bool" default={true}>
+  Whether to delete aggregates
+</ParamField>
+
+<ParamField path="simulate" type="bool" default={false}>
+  Dry-run mode (don't actually delete)
+</ParamField>
+
+<ResponseField name="return" type="DeleteResult">
+  Result with counts of deleted items
+</ResponseField>
+
+<Warning>
+  Deletion is permanent and cannot be undone. Always test with `simulate=True`
+  first.
+</Warning>
+
+```python
+# Simulate deletion (dry-run)
+result = await client.delete("old_app", simulate=True)
+print(f"Would delete: {result.events_deleted} events")
+
+# Actual deletion
+result = await client.delete("old_app", include_aggregates=True)
+print(f"Deleted {result.events_deleted} events")
+
+# Delete with time range
+from datetime import datetime, timedelta, timezone
+
+old_date = datetime.now(timezone.utc) - timedelta(days=365)
+result = await client.delete(
+    "my_app",
+    time_to=old_date,
+    include_aggregates=True
+)
+```
+
+### delete_project()
+
+<Warning>Advanced API - prefer using `delete()` for simpler interface</Warning>
+
+Delete usage data using DeleteOptions object.
+
+```python
+from token_usage_metrics.models import DeleteOptions
+
+options = DeleteOptions(
+    project_name="my_app",
+    time_from=datetime(...),
+    time_to=datetime(...),
+    include_aggregates=True,
+    simulate=False
+)
+
+result = await client.delete_project(options)
+```
+
+## Utility Operations
+
+### health_check()
+
+Check if backend is healthy and accessible.
+
+<ResponseField name="return" type="bool">
+  True if backend is healthy, False otherwise
+</ResponseField>
+
+```python
+if await client.health_check():
+    print("Backend is healthy")
+else:
+    print("Backend is unavailable")
+```
+
+### get_stats()
+
+Get client statistics (queue size, drops, circuit state).
+
+<ResponseField name="return" type="dict">
+  Dictionary with client statistics
+</ResponseField>
+
+```python
+stats = client.get_stats()
+print(f"Queue size: {stats['queue_size']}")
+print(f"Dropped: {stats['dropped_count']}")
+print(f"Circuit state: {stats['circuit_state']}")
+```
+
+### aclose()
+
+Close client and flush remaining events.
+
+```python
+await client.aclose()
+```
+
+## Examples
+
+<CodeGroup>
+
+```python Basic Usage
+async def main():
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    # Log events
+    await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+
+    # Query
+    events, _ = await client.query(project="my_app")
+
+    # Aggregate
+    daily = await client.aggregate(group_by="day")
+
+    await client.aclose()
+```
+
+```python Context Manager
+async def main():
+    async with TokenUsageClient.init("redis://localhost:6379/0") as client:
+        await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+        events, _ = await client.query(project="my_app")
+```
+
+```python Error Handling
+from token_usage_metrics.errors import CircuitBreakerOpen, BufferFullError
+
+async def main():
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    try:
+        await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+    except CircuitBreakerOpen:
+        print("Backend is unavailable")
+    except BufferFullError:
+        print("Buffer is full")
+    finally:
+        await client.aclose()
+```
+
+</CodeGroup>
+
+<Card title="Next: Data Models" icon="shapes" href="/api-reference/models">
+  Learn about data structures used in the API
+</Card>

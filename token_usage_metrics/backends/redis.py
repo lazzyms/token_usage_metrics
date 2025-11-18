@@ -177,8 +177,12 @@ class RedisBackend(Backend):
 
         events: list[UsageEvent] = []
         cursor_parts = self._parse_cursor(filters.cursor)
-        current_day = filters.time_from or datetime.now(timezone.utc)
-        end_day = filters.time_to or datetime.now(timezone.utc) + timedelta(days=1)
+        current_day = (filters.time_from or datetime.now(timezone.utc)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        end_day = (filters.time_to or datetime.now(timezone.utc)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ) + timedelta(days=1)
 
         try:
             # Iterate through days
@@ -202,8 +206,15 @@ class RedisBackend(Backend):
                     zset_key = f"tum:ts:{day_key}"
 
                 # Get IDs from ZSET
-                min_score = day.timestamp()
-                max_score = (day + timedelta(days=1)).timestamp()
+                # Use full day range: midnight -> next midnight
+                min_score = day.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                ).timestamp()
+                max_score = (
+                    (day + timedelta(days=1))
+                    .replace(hour=0, minute=0, second=0, microsecond=0)
+                    .timestamp()
+                )
 
                 ids = await self.client.zrangebyscore(
                     zset_key,
@@ -369,9 +380,13 @@ class RedisBackend(Backend):
 
                 async for key in self.client.scan_iter(match=pattern):
                     key_str = key.decode()
-                    # Extract project name from key
+                    # If we're scanning proj:* without a request_type filter, skip per-type keys to avoid double-counting
+                    if not filters.request_type and ":type:" in key_str:
+                        continue
+
+                    # Extract project name from key (format: tum:agg:YYYYMMDD:proj:PROJECT_NAME)
                     parts = key_str.split(":")
-                    project_name = parts[3]  # tum:agg:YYYYMMDD:proj:PROJECT_NAME
+                    project_name = parts[4]  # project_name is the 5th element
 
                     if filters.project_name and project_name != filters.project_name:
                         continue
@@ -448,9 +463,12 @@ class RedisBackend(Backend):
 
                     # Extract request type
                     if filters.project_name:
-                        request_type = parts[5]  # ...proj:NAME:type:TYPE
+                        # Key format: tum:agg:YYYYMMDD:proj:PROJECT_NAME:type:REQUEST_TYPE
+                        request_type = parts[6]  # request_type is the 7th element
                     else:
-                        request_type = parts[3]  # ...type:TYPE
+                        request_type = parts[
+                            4
+                        ]  # Key format: tum:agg:YYYYMMDD:type:REQUEST_TYPE
 
                     if filters.request_type and request_type != filters.request_type:
                         continue

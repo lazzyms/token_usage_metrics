@@ -1,0 +1,497 @@
+---
+title: Performance Tuning
+description: "Optimize Token Usage Metrics for your workload"
+icon: "gauge-high"
+---
+
+## Performance Overview
+
+Token Usage Metrics is designed for high-performance logging with minimal overhead. Here's how to optimize for different scenarios.
+
+<CardGroup cols={3}>
+  <Card title="Redis" icon="bolt">
+    ~10k writes/sec ~5k reads/sec
+  </Card>
+  <Card title="PostgreSQL" icon="database">
+    ~2k writes/sec ~10k reads/sec
+  </Card>
+  <Card title="MongoDB" icon="leaf">
+    ~5k writes/sec ~8k reads/sec
+  </Card>
+</CardGroup>
+
+## Tuning for Different Workloads
+
+### High-Throughput Logging
+
+**Goal:** Maximize write throughput
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    redis_pool_size=30,  # More connections
+
+    # Large buffer
+    buffer_size=5000,
+
+    # Larger batches, less frequent flushes
+    flush_batch_size=1000,
+    flush_interval=2.0,
+
+    # Aggressive drop policy
+    drop_policy="oldest",
+
+    # Reduce logging overhead
+    log_level="WARNING"
+)
+```
+
+<Tip>For maximum throughput, use Redis with large buffers and batches</Tip>
+
+### Low-Latency Logging
+
+**Goal:** Minimize time from log() to backend
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+
+    # Smaller buffer
+    buffer_size=500,
+
+    # Smaller batches, more frequent flushes
+    flush_batch_size=50,
+    flush_interval=0.5,
+
+    # Shorter timeouts
+    redis_socket_timeout=2.0
+)
+```
+
+### Memory-Constrained
+
+**Goal:** Minimize memory usage
+
+```python
+settings = Settings(
+    backend="postgres",  # Disk-based
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Small buffer
+    buffer_size=100,
+
+    # Small batches
+    flush_batch_size=50,
+
+    # Minimal pool
+    postgres_pool_max_size=5
+)
+```
+
+### High-Availability
+
+**Goal:** Maximize reliability
+
+```python
+settings = Settings(
+    backend="postgres",  # ACID guarantees
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Conservative buffering
+    buffer_size=500,
+    flush_interval=1.0,
+
+    # Aggressive retries
+    max_retries=5,
+    retry_backoff_max=5.0,
+
+    # Tolerant circuit breaker
+    circuit_breaker_threshold=10,
+    circuit_breaker_timeout=30.0
+)
+```
+
+## Optimization Techniques
+
+### Batching
+
+<Info>
+  Batching is the most effective optimization. Always enabled by default.
+</Info>
+
+```python
+# Instead of individual logs
+for event in events:
+    await client.log(event)  # 100 network calls
+
+# Use batch logging
+await client.log_many(events)  # 1 network call
+```
+
+### Connection Pooling
+
+```python
+settings = Settings(
+    # Redis
+    redis_pool_size=20,  # Match concurrency
+
+    # PostgreSQL
+    postgres_pool_max_size=20,
+
+    # MongoDB
+    mongodb_max_pool_size=20
+)
+```
+
+<Tip>Set pool size to match your expected concurrency level</Tip>
+
+### Flush Tuning
+
+Balance between latency and throughput:
+
+| Flush Interval | Batch Size    | Use Case           |
+| -------------- | ------------- | ------------------ |
+| 0.5s           | 50            | Low latency        |
+| 1.0s (default) | 200 (default) | Balanced           |
+| 2.0s           | 500           | High throughput    |
+| 5.0s           | 1000          | Maximum throughput |
+
+```python
+# High throughput
+settings = Settings(
+    flush_interval=2.0,
+    flush_batch_size=500
+)
+
+# Low latency
+settings = Settings(
+    flush_interval=0.5,
+    flush_batch_size=50
+)
+```
+
+### Buffer Sizing
+
+Choose buffer size based on your traffic pattern:
+
+```python
+# Calculate buffer size
+# buffer_size = peak_events_per_second * flush_interval * safety_factor
+
+# Example: 1000 events/sec, 2s flush, 2x safety
+buffer_size = 1000 * 2 * 2  # 4000
+
+settings = Settings(buffer_size=4000)
+```
+
+## Backend-Specific Tuning
+
+### Redis Optimization
+
+<Tabs>
+  <Tab title="Pipeline Batching">
+    Redis operations are automatically pipelined: ```python # Automatic
+    pipelining (10 ops per event) await client.log_many(events) ```
+  </Tab>
+
+  <Tab title="Connection Pooling">
+    ```python settings = Settings( redis_pool_size=30, # More connections for
+    concurrency redis_socket_timeout=5.0 ) ```
+  </Tab>
+
+  <Tab title="Memory Management">
+    ```python # Implement retention policy async def cleanup(): # Delete old
+    data periodically cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    await client.delete("project", time_to=cutoff) ```
+  </Tab>
+</Tabs>
+
+### PostgreSQL Optimization
+
+<Tabs>
+  <Tab title="Bulk Inserts">
+    Use `executemany` for batched inserts: ```python settings = Settings(
+    flush_batch_size=500 # Larger batches ) ```
+  </Tab>
+
+  <Tab title="Index Tuning">
+    ```sql -- Add covering indexes CREATE INDEX idx_covering ON usage_events
+    (project_name, timestamp) INCLUDE (input_tokens, output_tokens,
+    total_tokens); -- Partial indexes for recent data CREATE INDEX idx_recent ON
+    usage_events (timestamp) WHERE timestamp > NOW() - INTERVAL '30 days'; ```
+  </Tab>
+
+  <Tab title="Connection Pooling">
+    ```python settings = Settings( postgres_pool_max_size=20,
+    postgres_pool_min_size=5 ) ```
+  </Tab>
+
+  <Tab title="Table Partitioning">
+    ```sql -- Monthly partitions for efficient queries CREATE TABLE
+    usage_events_2024_01 PARTITION OF usage_events FOR VALUES FROM
+    ('2024-01-01') TO ('2024-02-01'); ```
+  </Tab>
+</Tabs>
+
+### MongoDB Optimization
+
+<Tabs>
+  <Tab title="Bulk Writes">
+    ```python
+    settings = Settings(
+        flush_batch_size=500  # Larger batches
+    )
+    ```
+  </Tab>
+  
+  <Tab title="Index Optimization">
+    ```javascript
+    // Compound indexes for common queries
+    db.usage_events.createIndex({
+        project_name: 1,
+        timestamp: 1,
+        request_type: 1
+    })
+    
+    // Covering indexes
+    db.usage_events.createIndex({
+        project_name: 1,
+        timestamp: 1,
+        input_tokens: 1,
+        output_tokens: 1
+    })
+    ```
+  </Tab>
+  
+  <Tab title="Write Concern">
+    ```python
+    # For higher throughput, reduce write concern
+    # (already optimized in client, use default w=1)
+    ```
+  </Tab>
+  
+  <Tab title="Sharding">
+    ```javascript
+    // Shard by project for horizontal scaling
+    sh.shardCollection(
+        "token_usage.usage_events",
+        { project_name: 1, timestamp: 1 }
+    )
+    ```
+  </Tab>
+</Tabs>
+
+## Monitoring Performance
+
+### Client Metrics
+
+```python
+import time
+
+start = time.time()
+await client.log("app", "chat", input_tokens=100, output_tokens=50)
+duration = time.time() - start
+
+print(f"Log latency: {duration*1000:.2f}ms")
+
+# Check stats
+stats = client.get_stats()
+print(f"Queue size: {stats['queue_size']}")
+print(f"Dropped: {stats['dropped_count']}")
+```
+
+### Backend Metrics
+
+<Tabs>
+  <Tab title="Redis">
+    ```bash
+    # Monitor commands
+    redis-cli MONITOR
+    
+    # Check stats
+    redis-cli INFO stats
+    redis-cli INFO memory
+    
+    # Slow log
+    redis-cli SLOWLOG GET 10
+    ```
+  </Tab>
+  
+  <Tab title="PostgreSQL">
+    ```sql
+    -- Slow queries
+    SELECT query, calls, total_time, mean_time
+    FROM pg_stat_statements
+    ORDER BY mean_time DESC
+    LIMIT 10;
+    
+    -- Table stats
+    SELECT * FROM pg_stat_user_tables 
+    WHERE schemaname = 'public';
+    
+    -- Index usage
+    SELECT * FROM pg_stat_user_indexes;
+    ```
+  </Tab>
+  
+  <Tab title="MongoDB">
+    ```javascript
+    // Database stats
+    db.stats()
+    
+    // Collection stats
+    db.usage_events.stats()
+    
+    // Slow queries
+    db.system.profile.find({ millis: { $gt: 100 } })
+    
+    // Index stats
+    db.usage_events.aggregate([{ $indexStats: {} }])
+    ```
+  </Tab>
+</Tabs>
+
+### Application Metrics
+
+```python
+import prometheus_client as prom
+
+# Define metrics
+log_duration = prom.Histogram('tum_log_duration_seconds', 'Log duration')
+queue_size = prom.Gauge('tum_queue_size', 'Queue size')
+dropped_total = prom.Counter('tum_dropped_total', 'Dropped events')
+
+# Record metrics
+@log_duration.time()
+async def tracked_log(client, event):
+    await client.log(event)
+
+# Update gauges
+stats = client.get_stats()
+queue_size.set(stats['queue_size'])
+dropped_total.inc(stats['dropped_count'])
+```
+
+## Benchmarking
+
+### Write Performance
+
+```python
+import asyncio
+import time
+from token_usage_metrics import TokenUsageClient
+
+async def benchmark_writes(n=10000):
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    start = time.time()
+
+    for i in range(n):
+        await client.log(
+            "benchmark",
+            "test",
+            input_tokens=100,
+            output_tokens=50
+        )
+
+    await client.flush()
+    duration = time.time() - start
+
+    print(f"Logged {n} events in {duration:.2f}s")
+    print(f"Throughput: {n/duration:.0f} events/sec")
+
+    await client.aclose()
+
+asyncio.run(benchmark_writes())
+```
+
+### Read Performance
+
+```python
+async def benchmark_reads(n=1000):
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    start = time.time()
+
+    for i in range(n):
+        events, _ = await client.query(project="benchmark", limit=100)
+
+    duration = time.time() - start
+
+    print(f"Executed {n} queries in {duration:.2f}s")
+    print(f"Throughput: {n/duration:.0f} queries/sec")
+
+    await client.aclose()
+```
+
+## Scaling Strategies
+
+### Vertical Scaling
+
+Increase resources on single instance:
+
+```python
+settings = Settings(
+    # More memory
+    buffer_size=10000,
+
+    # More connections
+    redis_pool_size=50,
+
+    # Larger batches
+    flush_batch_size=2000
+)
+```
+
+### Horizontal Scaling
+
+<Tabs>
+  <Tab title="Multiple Clients">
+    ```python # Run multiple client instances # Each with independent buffer #
+    Instance 1 client1 = await TokenUsageClient.init("redis://localhost:6379/0")
+    # Instance 2 client2 = await
+    TokenUsageClient.init("redis://localhost:6379/0") # Events are safely
+    written from both ```
+  </Tab>
+
+  <Tab title="Backend Sharding">
+    ```python # Redis Cluster settings = Settings(
+    redis_url="redis://cluster-node1:6379,cluster-node2:6379" ) # PostgreSQL
+    read replicas # (Use separate DSN for reads) # MongoDB sharding # (Handled
+    transparently by MongoDB) ```
+  </Tab>
+
+  <Tab title="Load Balancing">
+    ```python # Use load balancer in front of backend settings = Settings(
+    redis_url="redis://lb.example.com:6379" ) ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Batch When Possible" icon="layer-group">
+    Use `log_many()` for multiple events
+  </Card>
+  <Card title="Tune Buffer Size" icon="memory">
+    Match your traffic patterns
+  </Card>
+  <Card title="Monitor Metrics" icon="chart-line">
+    Track queue size and drops
+  </Card>
+  <Card title="Use Connection Pools" icon="link">
+    Reduce connection overhead
+  </Card>
+  <Card title="Test Under Load" icon="vial">
+    Benchmark your configuration
+  </Card>
+  <Card title="Scale Horizontally" icon="up-right-and-down-left-from-center">
+    Multiple instances for high load
+  </Card>
+</CardGroup>
+
+<Card title="Back to Getting Started" icon="house" href="/introduction">
+  Return to main documentation
+</Card>

@@ -1,0 +1,399 @@
+---
+title: Supabase Backend
+description: "Setup and configuration for Supabase backend"
+icon: "cloud"
+---
+
+## Overview
+
+Supabase backend uses the same PostgreSQL implementation as the standard Postgres backend, but leverages Supabase's managed infrastructure. Get all the benefits of PostgreSQL with automatic backups, scaling, and a dashboard.
+
+<Info>
+  Supabase is PostgreSQL under the hood, so performance characteristics are
+  identical to the PostgreSQL backend
+</Info>
+
+## Installation
+
+```bash
+uv add token-usage-metrics[postgres]
+```
+
+<Tip>Use the `postgres` extra, not a separate `supabase` extra</Tip>
+
+## Setup
+
+### 1. Create Supabase Project
+
+1. Go to [supabase.com](https://supabase.com)
+2. Create a new project
+3. Wait for provisioning to complete
+4. Note your connection details from Settings → Database
+
+### 2. Get Connection String
+
+From your Supabase dashboard:
+
+**Settings → Database → Connection string → URI**
+
+```
+postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+```
+
+<Warning>
+  Use the service role key or a secure password. Never commit credentials to
+  version control.
+</Warning>
+
+## Configuration
+
+### Basic Configuration
+
+```python
+from token_usage_metrics import Settings
+
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
+)
+```
+
+### With Connection Pooling
+
+```python
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres",
+
+    # Connection pooling
+    postgres_pool_min_size=2,
+    postgres_pool_max_size=10,
+
+    # Timeouts
+    postgres_command_timeout=30.0
+)
+```
+
+### Environment Variables
+
+```bash
+export TUM_BACKEND=supabase
+export TUM_SUPABASE_DSN=postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres
+export TUM_POSTGRES_POOL_MAX_SIZE=10
+```
+
+<Tip>
+  Use a `.env` file for local development: ```bash # .env TUM_BACKEND=supabase
+  TUM_SUPABASE_DSN=postgresql://postgres:your-password@db.your-project.supabase.co:5432/postgres
+  ```
+</Tip>
+
+## Schema
+
+Tables are automatically created on first connection. View them in the Supabase dashboard:
+
+**Dashboard → Table Editor**
+
+### Tables Created
+
+- `usage_events` - Raw token usage events
+- `daily_aggregates` - Precomputed daily summaries
+
+<Info>
+  The schema is identical to the PostgreSQL backend. See [PostgreSQL
+  Backend](/backends/postgres) for full schema details.
+</Info>
+
+## Usage Example
+
+```python
+import asyncio
+from token_usage_metrics import TokenUsageClient
+
+async def main():
+    # Initialize with Supabase connection
+    client = await TokenUsageClient.init(
+        "postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:5432/postgres"
+    )
+
+    # Log usage
+    await client.log(
+        "my_app",
+        "chat",
+        input_tokens=100,
+        output_tokens=50
+    )
+
+    # Query events
+    events, _ = await client.query(project="my_app")
+    print(f"Found {len(events)} events")
+
+    # Get daily aggregates
+    daily = await client.aggregate(group_by="day")
+    for bucket in daily:
+        print(f"{bucket.start.date()}: {bucket.metrics}")
+
+    await client.aclose()
+
+asyncio.run(main())
+```
+
+## Supabase Dashboard Features
+
+### Query Your Data
+
+Use the SQL Editor to run custom queries:
+
+```sql
+-- View recent events
+SELECT * FROM usage_events
+ORDER BY timestamp DESC
+LIMIT 10;
+
+-- Daily totals
+SELECT
+    date,
+    SUM(total_tokens) as total_tokens,
+    SUM(request_count) as requests
+FROM daily_aggregates
+WHERE date >= CURRENT_DATE - INTERVAL '30 days'
+GROUP BY date
+ORDER BY date;
+```
+
+### Set Up Row Level Security (RLS)
+
+Protect your data with RLS policies:
+
+```sql
+-- Enable RLS
+ALTER TABLE usage_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_aggregates ENABLE ROW LEVEL SECURITY;
+
+-- Allow service role full access
+CREATE POLICY "Service role has full access" ON usage_events
+    FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Service role has full access" ON daily_aggregates
+    FOR ALL USING (auth.role() = 'service_role');
+```
+
+<Warning>
+  Ensure your application uses the service role key for write operations
+</Warning>
+
+### Monitor Performance
+
+Use the Supabase dashboard to monitor:
+
+- Query performance
+- Database size
+- Connection count
+- Slow queries
+
+## Performance Optimization
+
+### Connection Pooling
+
+Supabase provides connection pooling by default. Configure your client pool size:
+
+```python
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://...",
+
+    # Match your workload
+    postgres_pool_min_size=5,
+    postgres_pool_max_size=20
+)
+```
+
+### Use Transaction Pooler
+
+For serverless environments, use Supabase's transaction pooler:
+
+```
+postgresql://postgres:[PASSWORD]@db.[PROJECT].supabase.co:6543/postgres
+```
+
+<Info>
+  Port 6543 uses Supavisor for connection pooling, ideal for serverless
+  functions
+</Info>
+
+### Index Optimization
+
+View and manage indexes in the SQL Editor:
+
+```sql
+-- Check existing indexes
+SELECT * FROM pg_indexes
+WHERE tablename IN ('usage_events', 'daily_aggregates');
+
+-- Add custom indexes if needed
+CREATE INDEX idx_custom
+    ON usage_events (project_name, request_type, timestamp);
+```
+
+## Data Retention
+
+### Using Supabase Cron Jobs
+
+Set up automatic cleanup with `pg_cron`:
+
+```sql
+-- Enable pg_cron extension
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+-- Schedule daily cleanup (runs at 2 AM)
+SELECT cron.schedule(
+    'cleanup-old-events',
+    '0 2 * * *',
+    $$
+    DELETE FROM usage_events
+    WHERE timestamp < NOW() - INTERVAL '90 days'
+    $$
+);
+
+-- Cleanup aggregates
+SELECT cron.schedule(
+    'cleanup-old-aggregates',
+    '0 2 * * *',
+    $$
+    DELETE FROM daily_aggregates
+    WHERE date < CURRENT_DATE - INTERVAL '90 days'
+    $$
+);
+```
+
+### Using Application Code
+
+```python
+from datetime import datetime, timedelta, timezone
+
+async def cleanup_old_data(client: TokenUsageClient):
+    """Delete data older than 90 days"""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+
+    projects = ["project1", "project2"]
+
+    for project in projects:
+        result = await client.delete(
+            project,
+            time_to=cutoff,
+            include_aggregates=True
+        )
+        print(f"Deleted {result.events_deleted} events for {project}")
+```
+
+## Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Use Service Role Key">
+    Use the service role key for backend operations, not the anon key: ```python
+    # ✅ Good - service role
+    supabase_dsn="postgresql://postgres:service_role_key@..." # ❌ Bad - anon
+    key (read-only) supabase_dsn="postgresql://postgres:anon_key@..." ```
+  </Accordion>
+
+  <Accordion title="Store Credentials Securely">
+    - Use environment variables - Never commit to version control - Use secrets
+    management (AWS Secrets Manager, etc.) ```python import os settings =
+    Settings( backend="supabase", supabase_dsn=os.getenv("SUPABASE_DSN") ) ```
+  </Accordion>
+
+  <Accordion title="Enable RLS">
+    Protect your tables with Row Level Security policies
+  </Accordion>
+
+  <Accordion title="Use SSL">
+    Supabase enforces SSL by default. Ensure your client respects this:
+    ```python # SSL is automatic with Supabase URLs
+    supabase_dsn="postgresql://...@db.xxx.supabase.co..." ```
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring
+
+### Dashboard Metrics
+
+Monitor in the Supabase dashboard:
+
+- **Database** → Size, connections, queries
+- **Logs** → Query logs, error logs
+- **Reports** → Performance insights
+
+### Application Metrics
+
+```python
+# Check client stats
+stats = client.get_stats()
+print(f"Queue size: {stats['queue_size']}")
+print(f"Dropped: {stats['dropped_count']}")
+print(f"Circuit: {stats['circuit_state']}")
+
+# Health check
+healthy = await client.health_check()
+print(f"Backend healthy: {healthy}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection Refused">
+    **Symptom:** Cannot connect to database **Solution:** - Verify your Supabase
+    project is not paused - Check connection string format - Ensure network
+    connectivity - Check firewall rules
+  </Accordion>
+
+  <Accordion title="Authentication Failed">
+    **Symptom:** `password authentication failed` **Solution:** - Verify service
+    role key is correct - Check for typos in connection string - Reset database
+    password in Supabase dashboard
+  </Accordion>
+
+  <Accordion title="Slow Queries">
+    **Symptom:** High latency on reads **Solution:** - Check Supabase dashboard
+    for slow queries - Add indexes for common query patterns - Consider
+    upgrading Supabase plan - Use connection pooler (port 6543)
+  </Accordion>
+</AccordionGroup>
+
+## Pricing Considerations
+
+<Info>
+  Supabase free tier includes: - 500 MB database space - Up to 1 GB bandwidth -
+  Pauses after 1 week of inactivity
+</Info>
+
+For production use:
+
+- **Pro Plan:** $25/month - 8 GB database, no pausing
+- **Team Plan:** $599/month - 16 GB database, dedicated resources
+- **Enterprise:** Custom pricing
+
+## Advantages over Self-Hosted PostgreSQL
+
+<CardGroup cols={2}>
+  <Card title="Managed Backups" icon="floppy-disk">
+    Automatic daily backups included
+  </Card>
+  <Card title="Dashboard" icon="chart-line">
+    Visual query editor and monitoring
+  </Card>
+  <Card title="Easy Scaling" icon="up-right-and-down-left-from-center">
+    Upgrade plan to scale resources
+  </Card>
+  <Card title="No Maintenance" icon="wrench">
+    Updates and patches handled automatically
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Previous: PostgreSQL" icon="database" href="/backends/postgres">
+    PostgreSQL backend documentation
+  </Card>
+  <Card title="Next: MongoDB" icon="leaf" href="/backends/mongodb">
+    MongoDB backend documentation
+  </Card>
+</CardGroup>

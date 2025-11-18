@@ -13,6 +13,7 @@ class BackendType(str, Enum):
     REDIS = "redis"
     POSTGRES = "postgres"
     MONGODB = "mongodb"
+    SUPABASE = "supabase"
 
 
 class Settings(BaseSettings):
@@ -45,6 +46,13 @@ class Settings(BaseSettings):
     mongodb_database: str = Field(default="token_usage")
     mongodb_max_pool_size: int = Field(default=10, ge=1)
     mongodb_timeout: float = Field(default=5.0, gt=0)
+
+    # Supabase (Postgres-compatible) settings
+    supabase_dsn: str = Field(default="postgresql://localhost:5432/token_usage")
+    supabase_pool_min_size: int = Field(default=2, ge=1)
+    supabase_pool_max_size: int = Field(default=10, ge=1)
+    supabase_command_timeout: float = Field(default=60.0, gt=0)
+    supabase_schema: str = Field(default="public")
 
     # Queue and buffering
     buffer_size: int = Field(default=1000, ge=10)

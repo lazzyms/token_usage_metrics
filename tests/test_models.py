@@ -75,6 +75,14 @@ def test_settings():
     assert settings.backend == BackendType.REDIS
     assert settings.buffer_size == 500
 
+    supabase_settings = Settings(
+        backend=BackendType.SUPABASE,
+        supabase_dsn="postgresql://localhost:5432/token_usage",
+    )
+
+    assert supabase_settings.backend == BackendType.SUPABASE
+    assert supabase_settings.supabase_dsn.startswith("postgresql://")
+
 
 def test_delete_options():
     """Test DeleteOptions."""

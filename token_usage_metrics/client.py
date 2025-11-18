@@ -8,6 +8,7 @@ from token_usage_metrics.backends.base import Backend
 from token_usage_metrics.backends.mongodb import MongoDBBackend
 from token_usage_metrics.backends.postgres import PostgresBackend
 from token_usage_metrics.backends.redis import RedisBackend
+from token_usage_metrics.backends.supabase import SupabaseBackend
 from token_usage_metrics.config import BackendType, Settings
 from token_usage_metrics.errors import BackendError
 from token_usage_metrics.logging import get_logger
@@ -98,6 +99,9 @@ class TokenUsageClient:
             elif backend in ("postgresql", "postgres"):
                 settings_dict["backend"] = BackendType.POSTGRES
                 settings_dict["postgres_dsn"] = connection_string
+            elif backend == "supabase":
+                settings_dict["backend"] = BackendType.SUPABASE
+                settings_dict["supabase_dsn"] = connection_string
             elif backend == "mongodb":
                 settings_dict["backend"] = BackendType.MONGODB
                 settings_dict["mongodb_url"] = connection_string
@@ -154,6 +158,20 @@ class TokenUsageClient:
                 else:
                     settings_dict["mongodb_url"] = f"mongodb://{host}:{port}"
                 settings_dict["mongodb_database"] = database
+            elif backend == "supabase":
+                settings_dict["backend"] = BackendType.SUPABASE
+                host = host or "localhost"
+                port = port or 5432
+                database = database or "token_usage"
+
+                if username and password:
+                    settings_dict["supabase_dsn"] = (
+                        f"postgresql://{username}:{password}@{host}:{port}/{database}"
+                    )
+                else:
+                    settings_dict["supabase_dsn"] = (
+                        f"postgresql://{host}:{port}/{database}"
+                    )
             else:
                 raise ValueError(f"Unsupported backend: {backend}")
 
@@ -232,15 +250,22 @@ class TokenUsageClient:
                 max_pool_size=self.settings.mongodb_max_pool_size,
                 timeout=self.settings.mongodb_timeout,
             )
+        elif self.settings.backend == BackendType.SUPABASE:
+            return SupabaseBackend(
+                supabase_dsn=self.settings.supabase_dsn,
+                min_size=self.settings.supabase_pool_min_size,
+                max_size=self.settings.supabase_pool_max_size,
+                command_timeout=self.settings.supabase_command_timeout,
+            )
         else:
             raise ValueError(f"Unknown backend type: {self.settings.backend}")
 
     async def log(
         self,
-        project_name: str,
-        request_type: str,
-        input_tokens: int,
-        output_tokens: int,
+        project_name: str | UsageEvent,
+        request_type: str | None = None,
+        input_tokens: int | None = None,
+        output_tokens: int | None = None,
         *,
         metadata: dict[str, Any] | None = None,
         request_count: int = 1,
@@ -261,14 +286,22 @@ class TokenUsageClient:
         if not self.queue:
             raise BackendError("Queue not initialized")
 
-        event = UsageEvent(
-            project_name=project_name,
-            request_type=request_type,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            metadata=metadata,
-            request_count=request_count,
-        )
+        if isinstance(project_name, UsageEvent):
+            event = project_name
+        else:
+            if request_type is None or input_tokens is None or output_tokens is None:
+                raise BackendError(
+                    "Missing required params: request_type/input_tokens/output_tokens"
+                )
+
+            event = UsageEvent(
+                project_name=project_name,
+                request_type=request_type,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                metadata=metadata,
+                request_count=request_count,
+            )
         await self.queue.enqueue(event)
 
     async def log_many(self, events: list[UsageEvent]) -> None:

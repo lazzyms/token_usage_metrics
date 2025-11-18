@@ -1,0 +1,451 @@
+---
+title: Data Models
+description: "Core data structures for events, filters, and results"
+---
+
+## UsageEvent
+
+Token usage event with validation.
+
+### Fields
+
+<ParamField path="id" type="string">
+  Unique event identifier. Auto-generated if omitted.
+</ParamField>
+
+<ParamField path="timestamp" type="datetime">
+  Event timestamp in UTC. Auto-generated if omitted.
+</ParamField>
+
+<ParamField path="project_name" type="string" required>
+  Project identifier (1-128 characters)
+</ParamField>
+
+<ParamField path="request_type" type="string" required>
+  Request type identifier (1-64 characters)
+</ParamField>
+
+<ParamField path="input_tokens" type="int" required>
+  Number of input tokens (≥ 0)
+</ParamField>
+
+<ParamField path="output_tokens" type="int" required>
+  Number of output tokens (≥ 0)
+</ParamField>
+
+<ParamField path="total_tokens" type="int">
+  Total tokens. Auto-calculated as input_tokens + output_tokens if None.
+</ParamField>
+
+<ParamField path="request_count" type="int" default={1}>
+  Number of requests (≥ 1)
+</ParamField>
+
+<ParamField path="metadata" type="dict">
+  Optional metadata (max 4KB JSON)
+</ParamField>
+
+### Auto-validations
+
+<AccordionGroup>
+  <Accordion title="Timestamp Conversion">
+    `timestamp` is automatically converted to UTC if not timezone-aware
+  </Accordion>
+
+  <Accordion title="Total Tokens Calculation">
+    `total_tokens` is auto-calculated as `input_tokens + output_tokens` if None
+  </Accordion>
+
+  <Accordion title="Metadata Size">
+    `metadata` size is validated (max 4KB JSON)
+  </Accordion>
+</AccordionGroup>
+
+### Example
+
+```python
+from token_usage_metrics.models import UsageEvent
+from datetime import datetime, timezone
+
+event = UsageEvent(
+    id="optional-id",              # Auto-generated if omitted
+    timestamp=datetime.now(timezone.utc),   # Auto-generated if omitted
+    project_name="my_app",         # Required, 1-128 chars
+    request_type="chat",           # Required, 1-64 chars
+    input_tokens=100,              # Required, >= 0
+    output_tokens=50,              # Required, >= 0
+    total_tokens=None,             # Optional, auto-derived
+    request_count=1,               # Default: 1, >= 1
+    metadata={"model": "gpt-4", "user": "alice"},  # Optional, max 4KB
+)
+```
+
+## UsageFilter
+
+Filter parameters for querying events.
+
+### Fields
+
+<ParamField path="project_name" type="string">
+  Filter by project name
+</ParamField>
+
+<ParamField path="request_type" type="string">
+  Filter by request type
+</ParamField>
+
+<ParamField path="time_from" type="datetime">
+  Filter events after this time (UTC)
+</ParamField>
+
+<ParamField path="time_to" type="datetime">
+  Filter events before this time (UTC)
+</ParamField>
+
+<ParamField path="limit" type="int" default={100}>
+  Maximum results (1-10000)
+</ParamField>
+
+<ParamField path="cursor" type="string">
+  Pagination cursor from previous query
+</ParamField>
+
+### Example
+
+```python
+from token_usage_metrics.models import UsageFilter
+from datetime import datetime, timedelta, timezone
+
+filters = UsageFilter(
+    project_name="my_app",
+    request_type="chat",
+    time_from=datetime.now(timezone.utc) - timedelta(days=7),
+    time_to=datetime.now(timezone.utc),
+    limit=100,
+    cursor=None
+)
+```
+
+## AggregateSpec
+
+Specification for aggregate queries.
+
+### Fields
+
+<ParamField path="metrics" type="set[AggregateMetric]" required>
+  Set of metrics to compute
+</ParamField>
+
+<ParamField
+  path="group_by"
+  type="GroupByDimension"
+  default={GroupByDimension.NONE}
+>
+  Grouping dimension
+</ParamField>
+
+<ParamField path="bucket" type="TimeBucketType" default={TimeBucketType.DAY}>
+  Time bucket type (for time-series)
+</ParamField>
+
+### Example
+
+```python
+from token_usage_metrics.models import (
+    AggregateSpec,
+    AggregateMetric,
+    GroupByDimension,
+    TimeBucketType
+)
+
+spec = AggregateSpec(
+    metrics={
+        AggregateMetric.SUM_INPUT,
+        AggregateMetric.SUM_OUTPUT,
+        AggregateMetric.SUM_TOTAL,
+        AggregateMetric.COUNT_REQUESTS,
+        AggregateMetric.AVG_TOTAL_PER_REQUEST,
+    },
+    group_by=GroupByDimension.PROJECT,
+    bucket=TimeBucketType.DAY
+)
+```
+
+## DeleteOptions
+
+Options for project deletion.
+
+### Fields
+
+<ParamField path="project_name" type="string" required>
+  Project name to delete
+</ParamField>
+
+<ParamField path="time_from" type="datetime">
+  Optional start of time range
+</ParamField>
+
+<ParamField path="time_to" type="datetime">
+  Optional end of time range
+</ParamField>
+
+<ParamField path="include_aggregates" type="bool" default={true}>
+  Whether to delete aggregates
+</ParamField>
+
+<ParamField path="simulate" type="bool" default={false}>
+  Dry-run mode (don't actually delete)
+</ParamField>
+
+### Example
+
+```python
+from token_usage_metrics.models import DeleteOptions
+from datetime import datetime, timedelta, timezone
+
+options = DeleteOptions(
+    project_name="old_app",
+    time_from=datetime.now(timezone.utc) - timedelta(days=365),
+    time_to=datetime.now(timezone.utc) - timedelta(days=90),
+    include_aggregates=True,
+    simulate=True  # Test first
+)
+```
+
+## Result Types
+
+### TimeBucket
+
+Time-bucketed aggregate result.
+
+<ParamField path="start" type="datetime">
+  Bucket start time (UTC)
+</ParamField>
+
+<ParamField path="end" type="datetime">
+  Bucket end time (UTC)
+</ParamField>
+
+<ParamField path="metrics" type="dict[str, float]">
+  Computed metrics
+</ParamField>
+
+<ParamField path="group_keys" type="dict[str, str] | None">
+  Optional grouping keys
+</ParamField>
+
+```python
+bucket = TimeBucket(
+    start=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    end=datetime(2024, 1, 2, tzinfo=timezone.utc),
+    metrics={
+        "sum_total": 1000,
+        "count_requests": 10,
+        "avg_total_per_request": 100.0,
+    },
+    group_keys=None
+)
+```
+
+### SummaryRow
+
+Grouped aggregate summary row.
+
+<ParamField path="group_keys" type="dict[str, str]">
+  Grouping dimension values
+</ParamField>
+
+<ParamField path="metrics" type="dict[str, float]">
+  Computed metrics
+</ParamField>
+
+```python
+row = SummaryRow(
+    group_keys={"project_name": "my_app"},
+    metrics={
+        "sum_total": 5000,
+        "count_requests": 50,
+        "avg_total_per_request": 100.0,
+    }
+)
+```
+
+### DeleteResult
+
+Result of deletion operation.
+
+<ParamField path="events_deleted" type="int">
+  Number of events deleted
+</ParamField>
+
+<ParamField path="aggregates_deleted" type="int">
+  Number of aggregates deleted
+</ParamField>
+
+<ParamField path="simulated" type="bool">
+  Whether this was a simulation
+</ParamField>
+
+```python
+result = DeleteResult(
+    events_deleted=100,
+    aggregates_deleted=30,
+    simulated=False
+)
+```
+
+## Enums
+
+### AggregateMetric
+
+Available metrics for aggregation.
+
+<CodeGroup>
+
+```python Values
+class AggregateMetric(str, Enum):
+    SUM_INPUT = "sum_input"
+    SUM_OUTPUT = "sum_output"
+    SUM_TOTAL = "sum_total"
+    COUNT_REQUESTS = "count_requests"
+    AVG_TOTAL_PER_REQUEST = "avg_total_per_request"
+```
+
+```python Usage
+from token_usage_metrics.models import AggregateMetric
+
+metrics = {
+    AggregateMetric.SUM_TOTAL,
+    AggregateMetric.COUNT_REQUESTS
+}
+```
+
+</CodeGroup>
+
+| Metric                  | Description                |
+| ----------------------- | -------------------------- |
+| `SUM_INPUT`             | Sum of input tokens        |
+| `SUM_OUTPUT`            | Sum of output tokens       |
+| `SUM_TOTAL`             | Sum of total tokens        |
+| `COUNT_REQUESTS`        | Count of requests          |
+| `AVG_TOTAL_PER_REQUEST` | Average tokens per request |
+
+### GroupByDimension
+
+Grouping dimensions for aggregation.
+
+<CodeGroup>
+
+```python Values
+class GroupByDimension(str, Enum):
+    NONE = "none"
+    PROJECT = "project_name"
+    REQUEST_TYPE = "request_type"
+    PROJECT_AND_TYPE = "project_and_type"
+```
+
+```python Usage
+from token_usage_metrics.models import GroupByDimension
+
+spec = AggregateSpec(
+    metrics={AggregateMetric.SUM_TOTAL},
+    group_by=GroupByDimension.PROJECT
+)
+```
+
+</CodeGroup>
+
+| Dimension          | Description                     |
+| ------------------ | ------------------------------- |
+| `NONE`             | No grouping (overall aggregate) |
+| `PROJECT`          | Group by project name           |
+| `REQUEST_TYPE`     | Group by request type           |
+| `PROJECT_AND_TYPE` | Group by both                   |
+
+### TimeBucketType
+
+Time bucket types for time-series.
+
+<CodeGroup>
+
+```python Values
+class TimeBucketType(str, Enum):
+    DAY = "day"
+    HOUR = "hour"      # Future
+    WEEK = "week"      # Future
+```
+
+```python Usage
+from token_usage_metrics.models import TimeBucketType
+
+spec = AggregateSpec(
+    metrics={AggregateMetric.SUM_TOTAL},
+    bucket=TimeBucketType.DAY
+)
+```
+
+</CodeGroup>
+
+<Info>
+  Currently only `DAY` is supported. `HOUR` and `WEEK` are planned for future
+  releases.
+</Info>
+
+### BackendType
+
+Supported backend types.
+
+```python
+class BackendType(str, Enum):
+    REDIS = "redis"
+    POSTGRES = "postgres"
+    MONGODB = "mongodb"
+    SUPABASE = "supabase"
+```
+
+## Validation Rules
+
+### String Fields
+
+<CardGroup cols={2}>
+  <Card title="project_name">- Length: 1-128 characters - Required</Card>
+  <Card title="request_type">- Length: 1-64 characters - Required</Card>
+</CardGroup>
+
+### Numeric Fields
+
+<CardGroup cols={2}>
+  <Card title="Token Counts">
+    - input_tokens: ≥ 0 - output_tokens: ≥ 0 - total_tokens: ≥ 0
+  </Card>
+  <Card title="Request Count">- request_count: ≥ 1 - Default: 1</Card>
+</CardGroup>
+
+### Metadata
+
+<Warning>Metadata is limited to 4KB when serialized as JSON</Warning>
+
+```python
+# Valid
+metadata = {"model": "gpt-4", "user": "alice", "tags": ["production"]}
+
+# Invalid - exceeds 4KB
+metadata = {"large_field": "x" * 5000}  # Raises validation error
+```
+
+## Type Hints
+
+All models include full type hints for IDE support and type checking:
+
+```python
+from token_usage_metrics.models import UsageEvent
+
+def process_event(event: UsageEvent) -> None:
+    # IDE autocomplete and type checking work
+    tokens: int = event.total_tokens
+    project: str = event.project_name
+```
+
+<Card title="Next: Backends" icon="database" href="/api-reference/backends">
+  Learn about backend-specific APIs
+</Card>

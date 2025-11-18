@@ -1,0 +1,128 @@
+---
+title: API Reference Overview
+description: "Complete API reference for Token Usage Metrics"
+---
+
+## Overview
+
+The Token Usage Metrics API provides a comprehensive set of tools for tracking and analyzing LLM token usage. The API is organized into several main components:
+
+<CardGroup cols={2}>
+  <Card title="Client API" icon="code" href="/api-reference/client">
+    Main interface for logging and querying token usage
+  </Card>
+  <Card title="Data Models" icon="shapes" href="/api-reference/models">
+    Core data structures for events, filters, and results
+  </Card>
+  <Card title="Backend API" icon="database" href="/api-reference/backends">
+    Backend-specific interfaces and implementations
+  </Card>
+  <Card title="Configuration" icon="gear" href="/advanced/configuration">
+    Settings and environment variables
+  </Card>
+</CardGroup>
+
+## Quick Reference
+
+### Import Statements
+
+```python
+# Main client
+from token_usage_metrics import TokenUsageClient
+
+# Data models
+from token_usage_metrics.models import (
+    UsageEvent,
+    UsageFilter,
+    AggregateSpec,
+    AggregateMetric,
+    DeleteOptions,
+    TimeBucket,
+    SummaryRow,
+    DeleteResult
+)
+
+# Configuration
+from token_usage_metrics.config import Settings
+
+# Error handling
+from token_usage_metrics.errors import (
+    BackendError,
+    BackendUnavailable,
+    CircuitBreakerOpen,
+    BufferFullError,
+    DroppedEventError,
+    DeletionError
+)
+```
+
+## API Design Philosophy
+
+<AccordionGroup>
+  <Accordion title="Async-First">
+    All I/O operations are async to prevent blocking your application. The
+    library uses `asyncio` and supports modern async/await syntax.
+  </Accordion>
+
+  <Accordion title="Type Safety">
+    Full type hints throughout the codebase with Pydantic models for validation.
+    Works seamlessly with mypy and other type checkers.
+  </Accordion>
+
+  <Accordion title="Fail-Safe">
+    Graceful degradation with circuit breakers, retry logic, and buffer overflow
+    protection. Your application continues running even if logging fails.
+  </Accordion>
+
+  <Accordion title="Zero Configuration">
+    Sensible defaults that work out of the box. Configure only what you need to
+    change.
+  </Accordion>
+</AccordionGroup>
+
+## Common Patterns
+
+### Context Manager Pattern
+
+<Tip>Use the context manager pattern for automatic cleanup</Tip>
+
+```python
+async with TokenUsageClient(settings) as client:
+    await client.log(event)
+    # Client automatically flushes and closes
+```
+
+### Factory Pattern
+
+```python
+# Initialize from connection string
+client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+# Or from settings
+client = await TokenUsageClient.from_settings(settings)
+```
+
+### Batch Operations
+
+```python
+# Log multiple events efficiently
+events = [event1, event2, event3]
+await client.log_many(events)
+
+# Query with pagination
+events, cursor = await client.query(project="my_app", limit=100)
+while cursor:
+    more_events, cursor = await client.query(cursor=cursor, limit=100)
+    events.extend(more_events)
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Client API" icon="code" href="/api-reference/client">
+    Learn about all client methods
+  </Card>
+  <Card title="Data Models" icon="shapes" href="/api-reference/models">
+    Explore data structures
+  </Card>
+</CardGroup>

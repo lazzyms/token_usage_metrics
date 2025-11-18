@@ -1,0 +1,356 @@
+---
+title: Backend API
+description: "Backend interface and implementation details"
+---
+
+## Backend Interface
+
+All backends implement the `Backend` abstract base class with a unified interface.
+
+### Required Methods
+
+<AccordionGroup>
+  <Accordion title="Lifecycle Methods">
+    ```python async def connect() -> None: """Establish connection to backend"""
+    async def disconnect() -> None: """Close connection and cleanup resources"""
+    async def health_check() -> bool: """Check if backend is healthy and
+    accessible""" ```
+  </Accordion>
+
+  <Accordion title="Write Operations">
+    ```python async def log_many(events: list[UsageEvent]) -> None: """Write
+    multiple events in batch""" ```
+  </Accordion>
+
+  <Accordion title="Read Operations">
+    ```python async def fetch_raw( filters: UsageFilter ) ->
+    tuple[list[UsageEvent], str | None]: """Query raw events with filters and
+    pagination""" async def summary_by_day( spec: AggregateSpec, filters:
+    UsageFilter ) -> list[TimeBucket]: """Get daily time-series aggregates"""
+    async def summary_by_project( spec: AggregateSpec, filters: UsageFilter ) ->
+    list[SummaryRow]: """Get aggregates grouped by project""" async def
+    summary_by_request_type( spec: AggregateSpec, filters: UsageFilter ) ->
+    list[SummaryRow]: """Get aggregates grouped by request type""" ```
+  </Accordion>
+
+  <Accordion title="Delete Operations">
+    ```python async def delete_project(options: DeleteOptions) -> DeleteResult:
+    """Delete events and aggregates for a project""" ```
+  </Accordion>
+</AccordionGroup>
+
+## Backend-Specific Details
+
+### Redis Backend
+
+<CardGroup cols={2}>
+  <Card title="Connection" icon="link">
+    Uses `redis.asyncio` client with connection pooling
+  </Card>
+  <Card title="Schema" icon="database">
+    Hash-per-event + ZSETs for indexes + Hashes for aggregates
+  </Card>
+</CardGroup>
+
+#### Configuration
+
+```python
+from token_usage_metrics.config import Settings
+
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    redis_pool_size=10,
+    redis_socket_timeout=5.0,
+    redis_socket_connect_timeout=5.0
+)
+```
+
+#### Key Structure
+
+```text
+Event Storage:
+  tum:e:{id} → Hash with all event fields
+
+Indexes (Day-Partitioned):
+  tum:ts:{YYYYMMDD} → ZSET {id: timestamp_score}
+  tum:proj:{project}:{YYYYMMDD} → ZSET
+  tum:type:{type}:{YYYYMMDD} → ZSET
+
+Aggregates:
+  tum:agg:{YYYYMMDD} → Hash
+  tum:agg:{YYYYMMDD}:proj:{project} → Hash
+  tum:agg:{YYYYMMDD}:type:{type} → Hash
+```
+
+#### Performance Characteristics
+
+- **Writes:** ~10,000/sec (pipelined)
+- **Reads:** ~5,000/sec
+- **Latency:** &lt;5ms (p99)
+- **Memory:** ~1KB per event + ~500B per aggregate
+
+<Tip>Redis is best for high-speed writes and when data fits in memory</Tip>
+
+### PostgreSQL Backend
+
+<CardGroup cols={2}>
+  <Card title="Connection" icon="link">
+    Uses `asyncpg` with connection pooling
+  </Card>
+  <Card title="Schema" icon="database">
+    Two tables: `usage_events` and `daily_aggregates`
+  </Card>
+</CardGroup>
+
+#### Configuration
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+    postgres_pool_min_size=2,
+    postgres_pool_max_size=10,
+    postgres_command_timeout=30.0
+)
+```
+
+#### Schema
+
+<CodeGroup>
+
+```sql usage_events
+CREATE TABLE usage_events (
+    id TEXT PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL,
+    project_name TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    request_count INTEGER NOT NULL,
+    metadata JSONB
+);
+
+-- Indexes for efficient queries
+CREATE INDEX idx_usage_events_timestamp
+    ON usage_events (timestamp);
+CREATE INDEX idx_usage_events_project_ts
+    ON usage_events (project_name, timestamp);
+CREATE INDEX idx_usage_events_type_ts
+    ON usage_events (request_type, timestamp);
+CREATE INDEX idx_usage_events_project_type_ts
+    ON usage_events (project_name, request_type, timestamp);
+```
+
+```sql daily_aggregates
+CREATE TABLE daily_aggregates (
+    date DATE NOT NULL,
+    project_name TEXT,
+    request_type TEXT,
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens BIGINT NOT NULL DEFAULT 0,
+    request_count BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (date, project_name, request_type)
+);
+```
+
+</CodeGroup>
+
+#### Performance Characteristics
+
+- **Writes:** ~2,000/sec
+- **Reads:** ~10,000/sec
+- **Latency:** &lt;20ms (p99)
+- **Storage:** Disk-based (minimal memory)
+
+<Tip>
+  PostgreSQL is best for long-term storage, complex queries, and ACID guarantees
+</Tip>
+
+### Supabase Backend
+
+<Info>
+  Supabase uses the same PostgreSQL backend implementation with managed
+  infrastructure
+</Info>
+
+#### Configuration
+
+```python
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres"
+)
+```
+
+The schema is identical to PostgreSQL. Tables are auto-created on first connection.
+
+### MongoDB Backend
+
+<CardGroup cols={2}>
+  <Card title="Connection" icon="link">
+    Uses `motor` (async MongoDB driver)
+  </Card>
+  <Card title="Schema" icon="database">
+    Two collections: `usage_events` and `daily_aggregates`
+  </Card>
+</CardGroup>
+
+#### Configuration
+
+```python
+settings = Settings(
+    backend="mongodb",
+    mongodb_url="mongodb://localhost:27017",
+    mongodb_database="token_usage",
+    mongodb_max_pool_size=10,
+    mongodb_server_selection_timeout=5.0
+)
+```
+
+#### Schema
+
+<CodeGroup>
+
+```javascript usage_events
+{
+    _id: "event_id",
+    timestamp: ISODate("..."),
+    project_name: "...",
+    request_type: "...",
+    input_tokens: 100,
+    output_tokens: 50,
+    total_tokens: 150,
+    request_count: 1,
+    metadata: {...}
+}
+
+// Indexes
+db.usage_events.createIndex({ timestamp: 1 })
+db.usage_events.createIndex({ project_name: 1, timestamp: 1 })
+db.usage_events.createIndex({ request_type: 1, timestamp: 1 })
+db.usage_events.createIndex({
+    project_name: 1,
+    request_type: 1,
+    timestamp: 1
+})
+```
+
+```javascript daily_aggregates
+{
+    date: ISODate("..."),
+    project_name: "...",
+    request_type: "...",
+    input_tokens: 1000,
+    output_tokens: 500,
+    total_tokens: 1500,
+    request_count: 10
+}
+
+// Unique index
+db.daily_aggregates.createIndex(
+    { date: 1, project_name: 1, request_type: 1 },
+    { unique: true }
+)
+```
+
+</CodeGroup>
+
+#### Performance Characteristics
+
+- **Writes:** ~5,000/sec
+- **Reads:** ~8,000/sec
+- **Latency:** &lt;10ms (p99)
+- **Storage:** Flexible, ~1KB per document
+
+<Tip>
+  MongoDB is best for flexible schemas, horizontal scaling, and document-based
+  queries
+</Tip>
+
+## Implementing a Custom Backend
+
+<Steps>
+  <Step title="Create Backend Class">
+    Subclass the `Backend` abstract base class: ```python from
+    token_usage_metrics.backends.base import Backend class
+    CustomBackend(Backend): def __init__(self, settings: Settings):
+    super().__init__(settings) # Initialize your backend ```
+  </Step>
+
+  <Step title="Implement Required Methods">
+    Implement all abstract methods: ```python async def connect(self) -> None: #
+    Establish connection pass async def disconnect(self) -> None: # Close
+    connection pass async def health_check(self) -> bool: # Check health return
+    True async def log_many(self, events: list[UsageEvent]) -> None: # Write
+    events pass # ... implement other methods ```
+  </Step>
+
+  <Step title="Add to Enum">
+    Update `BackendType` enum: ```python class BackendType(str, Enum): REDIS =
+    "redis" POSTGRES = "postgres" MONGODB = "mongodb" CUSTOM = "custom" # Add
+    your backend ```
+  </Step>
+
+  <Step title="Update Factory">
+    Update `TokenUsageClient._create_backend()`: ```python def
+    _create_backend(self) -> Backend: if self.settings.backend == "custom":
+    return CustomBackend(self.settings) # ... existing backends ```
+  </Step>
+
+  <Step title="Add Dependencies">
+    Update `pyproject.toml`: ```toml [project.optional-dependencies] custom =
+    ["custom-driver>=1.0.0"] ```
+  </Step>
+</Steps>
+
+## Backend Comparison
+
+| Feature          | Redis                 | PostgreSQL             | MongoDB               |
+| ---------------- | --------------------- | ---------------------- | --------------------- |
+| **Speed**        | Fastest writes        | Fast reads             | Balanced              |
+| **Storage**      | In-memory             | Disk                   | Disk                  |
+| **Scalability**  | Vertical + Clustering | Vertical + Replication | Horizontal sharding   |
+| **Transactions** | Limited               | Full ACID              | Eventually consistent |
+| **Query Power**  | Basic                 | Full SQL               | Rich aggregations     |
+| **Setup**        | Easiest               | Medium                 | Medium                |
+| **Cost**         | Memory-based          | Storage-based          | Storage-based         |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Connection Pooling">
+    Always use connection pooling for production deployments: ```python settings
+    = Settings( redis_pool_size=10, # Redis postgres_pool_max_size=10, #
+    PostgreSQL mongodb_max_pool_size=10 # MongoDB ) ```
+  </Accordion>
+
+  <Accordion title="Error Handling">
+    Backends should raise appropriate errors: ```python from
+    token_usage_metrics.errors import BackendError, BackendUnavailable try:
+    await backend.log_many(events) except BackendUnavailable: # Backend is down
+    pass except BackendError as e: # General backend error pass ```
+  </Accordion>
+
+  <Accordion title="Resource Cleanup">
+    Always clean up resources: ```python async with TokenUsageClient(settings)
+    as client: # Resources automatically cleaned up pass ```
+  </Accordion>
+</AccordionGroup>
+
+<CardGroup cols={2}>
+  <Card title="Redis Setup" icon="bolt" href="/backends/redis">
+    Detailed Redis configuration
+  </Card>
+  <Card title="PostgreSQL Setup" icon="database" href="/backends/postgres">
+    Detailed PostgreSQL configuration
+  </Card>
+  <Card title="Supabase Setup" icon="cloud" href="/backends/supabase">
+    Detailed Supabase configuration
+  </Card>
+  <Card title="MongoDB Setup" icon="leaf" href="/backends/mongodb">
+    Detailed MongoDB configuration
+  </Card>
+</CardGroup>

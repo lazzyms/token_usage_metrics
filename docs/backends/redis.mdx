@@ -1,0 +1,403 @@
+---
+title: Redis Backend
+description: "Setup and configuration for Redis backend"
+icon: "bolt"
+---
+
+## Overview
+
+Redis backend provides the fastest write performance with in-memory storage and efficient indexing using sorted sets (ZSETs). Ideal for high-throughput applications where data fits in memory.
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="gauge-high">
+    ~10,000 writes/sec ~5,000 reads/sec
+  </Card>
+  <Card title="Latency" icon="clock">
+    &lt;5ms (p99)
+  </Card>
+</CardGroup>
+
+## Installation
+
+```bash
+uv add token-usage-metrics[redis]
+```
+
+This installs the Redis async driver (`redis[asyncio]`).
+
+## Setup
+
+### Docker (Recommended for Development)
+
+```bash
+# Start Redis
+docker run -d -p 6379:6379 --name redis-tum redis:7-alpine
+
+# With persistence
+docker run -d -p 6379:6379 \
+  -v redis-data:/data \
+  --name redis-tum \
+  redis:7-alpine redis-server --appendonly yes
+
+# Stop
+docker stop redis-tum
+
+# Start again
+docker start redis-tum
+```
+
+### Production Options
+
+<Tabs>
+  <Tab title="AWS ElastiCache">
+    ```python settings = Settings( backend="redis",
+    redis_url="redis://your-cluster.cache.amazonaws.com:6379/0" ) ```
+  </Tab>
+
+  <Tab title="Redis Cloud">
+    ```python settings = Settings( backend="redis",
+    redis_url="redis://default:password@redis-12345.c1.region.cloud.redislabs.com:12345"
+    ) ```
+  </Tab>
+
+  <Tab title="Azure Cache for Redis">
+    ```python settings = Settings( backend="redis",
+    redis_url="rediss://your-cache.redis.cache.windows.net:6380", redis_ssl=True
+    ) ```
+  </Tab>
+
+  <Tab title="Self-Hosted">
+    ```bash # Install Redis sudo apt-get install redis-server # Start service
+    sudo systemctl start redis-server # Enable on boot sudo systemctl enable
+    redis-server ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### Basic Configuration
+
+```python
+from token_usage_metrics import Settings
+
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0"
+)
+```
+
+### Advanced Configuration
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+
+    # Connection pooling
+    redis_pool_size=10,
+    redis_socket_timeout=5.0,
+    redis_socket_connect_timeout=5.0,
+
+    # SSL/TLS
+    redis_ssl=False,
+    redis_ssl_cert_reqs="required",
+
+    # Performance tuning
+    buffer_size=1000,
+    flush_interval=1.0,
+    flush_batch_size=200
+)
+```
+
+### Environment Variables
+
+```bash
+export TUM_BACKEND=redis
+export TUM_REDIS_URL=redis://localhost:6379/0
+export TUM_REDIS_POOL_SIZE=10
+export TUM_REDIS_SOCKET_TIMEOUT=5.0
+```
+
+## Schema Design
+
+### Event Storage
+
+Each event is stored as a Redis Hash:
+
+```text
+Key: tum:e:{event_id}
+Value: Hash {
+    id: string
+    ts: float (Unix timestamp)
+    project: string
+    type: string
+    input: int
+    output: int
+    total: int
+    count: int
+    metadata: json_string
+}
+```
+
+### Indexes (Day-Partitioned ZSETs)
+
+For efficient date-range queries, events are indexed in day-partitioned sorted sets:
+
+```text
+tum:ts:{YYYYMMDD}
+  → ZSET {event_id: timestamp_score}
+
+tum:proj:{project_name}:{YYYYMMDD}
+  → ZSET {event_id: timestamp_score}
+
+tum:type:{request_type}:{YYYYMMDD}
+  → ZSET {event_id: timestamp_score}
+```
+
+<Info>
+  Day partitioning prevents ZSETs from growing unbounded and makes deletion
+  efficient
+</Info>
+
+### Daily Aggregates
+
+Precomputed aggregates stored as Hashes:
+
+```text
+tum:agg:{YYYYMMDD}
+  → Hash {input_tokens, output_tokens, total_tokens, request_count}
+
+tum:agg:{YYYYMMDD}:proj:{project}
+  → Hash {input_tokens, output_tokens, total_tokens, request_count}
+
+tum:agg:{YYYYMMDD}:type:{type}
+  → Hash {input_tokens, output_tokens, total_tokens, request_count}
+
+tum:agg:{YYYYMMDD}:proj:{project}:type:{type}
+  → Hash {input_tokens, output_tokens, total_tokens, request_count}
+```
+
+## Write Path
+
+When logging events, the backend executes a pipelined Redis transaction:
+
+<Steps>
+  <Step title="Store Event">
+    ```python HSET tum:e:{id} field1 value1 field2 value2 ... ```
+  </Step>
+
+  <Step title="Add to Indexes">
+    ```python ZADD tum:ts:{date} {timestamp} {id}
+    ZADD tum:proj:{project}:{date} {timestamp} {id}
+    ZADD tum:type:{type}:{date} {timestamp} {id}
+    ```
+  </Step>
+
+  <Step title="Update Aggregates">
+    ```python HINCRBY tum:agg:{date} input_tokens {input}
+    HINCRBY tum:agg:{date} output_tokens {output}# ... 4 aggregate keys updated
+    ```
+  </Step>
+</Steps>
+
+<Info>
+  All operations are pipelined (~10 ops per event) for maximum throughput
+</Info>
+
+## Read Path
+
+### Raw Event Query
+
+<Steps>
+  <Step title="Find Narrowest Index">
+    Choose the most selective index based on filters
+  </Step>
+
+  <Step title="Query ZSET">
+    ```python ZRANGEBYSCORE tum:proj:{project}:{date} {from_ts} {to_ts}
+    ```
+  </Step>
+
+  <Step title="Fetch Events">
+    ```python HMGET tum:e:{id1} tum:e:{id2} ... ```
+  </Step>
+
+  <Step title="Deserialize">Convert Redis hashes to `UsageEvent` objects</Step>
+</Steps>
+
+### Aggregate Query
+
+<Steps>
+  <Step title="Identify Date Range">Calculate all dates in range</Step>
+
+  <Step title="Fetch Aggregate Keys">
+    ```python HGETALL tum:agg:{date1}
+    HGETALL tum:agg:{date2}
+    ... ```
+  </Step>
+
+  <Step title="Sum Across Dates">Aggregate values from all date keys</Step>
+
+  <Step title="Compute Metrics">
+    Calculate derived metrics (averages, etc.)
+  </Step>
+</Steps>
+
+## Performance Tuning
+
+### Memory Optimization
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+
+    # Reduce buffer size if memory is limited
+    buffer_size=500,
+
+    # Smaller batch sizes
+    flush_batch_size=100
+)
+```
+
+### Throughput Optimization
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+
+    # Larger buffer for higher throughput
+    buffer_size=5000,
+
+    # Larger batches
+    flush_batch_size=1000,
+
+    # More connections
+    redis_pool_size=20,
+
+    # Less frequent flushes
+    flush_interval=2.0
+)
+```
+
+### Low Latency
+
+```python
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+
+    # Smaller batches for lower latency
+    flush_batch_size=50,
+
+    # More frequent flushes
+    flush_interval=0.5,
+
+    # Shorter timeouts
+    redis_socket_timeout=2.0
+)
+```
+
+## Data Retention
+
+Redis doesn't support TTL for this schema pattern directly. Instead, implement retention via scheduled deletion:
+
+```python
+from datetime import datetime, timedelta, timezone
+
+async def cleanup_old_data(client: TokenUsageClient):
+    """Delete data older than 90 days"""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+
+    # Get all projects
+    # (You'll need to track this separately or scan keys)
+    projects = ["project1", "project2"]
+
+    for project in projects:
+        result = await client.delete(
+            project,
+            time_to=cutoff,
+            include_aggregates=True
+        )
+        print(f"Deleted {result.events_deleted} events for {project}")
+```
+
+<Warning>
+  For long-term retention, consider using PostgreSQL or MongoDB instead
+</Warning>
+
+## Monitoring
+
+### Check Memory Usage
+
+```bash
+redis-cli INFO memory
+```
+
+### Check Key Count
+
+```bash
+redis-cli DBSIZE
+```
+
+### Monitor Commands
+
+```bash
+redis-cli MONITOR
+```
+
+### Get Stats
+
+```python
+stats = client.get_stats()
+print(f"Queue size: {stats['queue_size']}")
+print(f"Dropped: {stats['dropped_count']}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Out of Memory">
+    **Symptom:** Redis returns OOM error **Solution:** - Increase Redis memory
+    limit: `maxmemory 2gb` in redis.conf - Implement data retention/cleanup -
+    Consider switching to disk-based backend
+  </Accordion>
+
+  <Accordion title="Connection Timeouts">
+    **Symptom:** `redis.exceptions.TimeoutError` **Solution:** - Increase
+    timeout: `redis_socket_timeout=10.0` - Check network connectivity - Reduce
+    batch size to avoid long-running commands
+  </Accordion>
+
+  <Accordion title="Slow Queries">
+    **Symptom:** High p99 latency **Solution:** - Check Redis CPU usage - Reduce
+    batch sizes - Enable pipelining (already done by default) - Consider Redis
+    Cluster for horizontal scaling
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Connection Pooling" icon="link">
+    Always configure `redis_pool_size` for production
+  </Card>
+  <Card title="Monitor Memory" icon="gauge">
+    Set up alerts for memory usage
+  </Card>
+  <Card title="Implement Retention" icon="clock">
+    Regularly clean up old data
+  </Card>
+  <Card title="Use Persistence" icon="floppy-disk">
+    Enable AOF or RDB for data durability
+  </Card>
+</CardGroup>
+
+<Card
+  title="Next: PostgreSQL Backend"
+  icon="database"
+  href="/backends/postgres"
+>
+  Learn about the PostgreSQL backend for long-term storage
+</Card>

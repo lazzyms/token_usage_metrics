@@ -1,7 +1,7 @@
 [project]
 name = "token-usage-metrics"
-version = "0.1.0"
-description = "Async LLM/embedding token usage tracking with multi-backend support (Redis, Postgres, MongoDB)"
+version = "0.1.1"
+description = "Async LLM/embedding token usage tracking with multi-backend support (Redis, Postgres/Supabase, MongoDB)"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -19,6 +19,7 @@ redis = ["redis>=5.0.0"]
 postgres = ["asyncpg>=0.29.0"]
 mongo = ["motor>=3.4.0"]
 all = ["redis>=5.0.0", "asyncpg>=0.29.0", "motor>=3.4.0"]
+supabase = ["asyncpg>=0.29.0"]
 logging = ["structlog>=24.2.0"]
 test = [
     "pytest>=8.3.0",

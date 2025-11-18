@@ -1,0 +1,421 @@
+---
+title: Quick Start Guide
+description: "Get up and running with Token Usage Metrics in minutes"
+---
+
+## Installation
+
+<CodeGroup>
+
+```bash Redis (Recommended)
+uv add token-usage-metrics[redis]
+```
+
+```bash All Backends
+uv add token-usage-metrics[all]
+```
+
+```bash PostgreSQL
+uv add token-usage-metrics[postgres]
+```
+
+```bash MongoDB
+uv add token-usage-metrics[mongo]
+```
+
+</CodeGroup>
+
+## Start Redis (Docker)
+
+<Tip>
+  Redis is the recommended backend for getting started due to its simplicity and
+  performance.
+</Tip>
+
+```bash
+docker run -d -p 6379:6379 redis:7-alpine
+```
+
+## Basic Usage - Simplified SDK Style
+
+The token-usage-metrics package provides a minimal SDK-style API. Just 3 lines to get started!
+
+```python
+import asyncio
+from token_usage_metrics import TokenUsageClient
+
+async def main():
+    # 1. Initialize with connection string (auto-starts)
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    try:
+        # 2. Log usage with direct parameters (no event objects!)
+        await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+        await client.flush()
+
+        # 3. Query with simple parameters (no filter objects!)
+        events, _ = await client.query(project="my_app")
+        print(f"Found {len(events)} events")
+
+        # Get daily aggregates
+        daily = await client.aggregate(group_by="day")
+        for bucket in daily:
+            print(f"{bucket.start.date()}: {bucket.metrics}")
+
+    finally:
+        await client.aclose()
+
+asyncio.run(main())
+```
+
+## Initialization Methods
+
+### Method 1: Connection String (Recommended)
+
+<CodeGroup>
+
+```python Redis
+client = await TokenUsageClient.init("redis://localhost:6379/0")
+```
+
+```python PostgreSQL
+client = await TokenUsageClient.init("postgresql://user:pass@localhost:5432/token_usage")
+```
+
+```python MongoDB
+client = await TokenUsageClient.init("mongodb://localhost:27017/token_usage")
+```
+
+</CodeGroup>
+
+### Method 2: Individual Parameters
+
+<CodeGroup>
+
+```python Redis
+client = await TokenUsageClient.init(
+    backend="redis",
+    host="localhost",
+    port=6379,
+    database="0"
+)
+```
+
+```python PostgreSQL
+client = await TokenUsageClient.init(
+    backend="postgres",
+    host="localhost",
+    port=5432,
+    username="user",
+    password="pass",
+    database="token_usage"
+)
+```
+
+```python MongoDB
+client = await TokenUsageClient.init(
+    backend="mongodb",
+    host="localhost",
+    port=27017,
+    username="user",
+    password="pass",
+    database="token_usage"
+)
+```
+
+</CodeGroup>
+
+### Method 3: With Advanced Configuration
+
+```python
+client = await TokenUsageClient.init(
+    "redis://localhost:6379/0",
+    buffer_size=500,
+    flush_interval=2.0,
+    max_retries=5
+)
+```
+
+## Logging Usage
+
+### Simple Logging
+
+```python
+await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
+```
+
+### With Metadata
+
+<Info>
+  Metadata allows you to store additional context about each request, such as
+  model name, user ID, or custom tags.
+</Info>
+
+```python
+await client.log(
+    "my_app", "chat",
+    input_tokens=100, output_tokens=50,
+    metadata={"model": "gpt-4", "user": "alice"}
+)
+```
+
+### With Request Count
+
+```python
+await client.log(
+    "my_app", "batch_processing",
+    input_tokens=5000, output_tokens=2000,
+    request_count=10  # Track multiple requests as one event
+)
+```
+
+## Querying Data
+
+### Basic Queries
+
+```python
+# Get all events for a project
+events, cursor = await client.query(project="my_app")
+
+# Filter by request type
+events, cursor = await client.query(
+    project="my_app",
+    request_type="chat"
+)
+```
+
+### Time Range Filtering
+
+```python
+from datetime import datetime, timedelta, timezone
+
+time_from = datetime.now(timezone.utc) - timedelta(days=7)
+events, cursor = await client.query(
+    project="my_app",
+    time_from=time_from,
+    limit=100
+)
+```
+
+### Pagination
+
+<Tip>Use cursors for efficient pagination through large result sets.</Tip>
+
+```python
+# First page
+events, cursor = await client.query(project="my_app", limit=50)
+
+# Next page
+if cursor:
+    more_events, next_cursor = await client.query(
+        project="my_app",
+        cursor=cursor,
+        limit=50
+    )
+```
+
+## Aggregations
+
+### Daily Aggregates
+
+```python
+# Get daily aggregates
+daily = await client.aggregate(group_by="day")
+
+for bucket in daily:
+    print(f"{bucket.start.date()}: {bucket.metrics}")
+```
+
+### Project-Level Aggregates
+
+```python
+projects = await client.aggregate(group_by="project")
+
+for row in projects:
+    project_name = row.group_keys["project_name"]
+    total_tokens = row.metrics["sum_total"]
+    print(f"{project_name}: {total_tokens} tokens")
+```
+
+### Request Type Aggregates
+
+```python
+types = await client.aggregate(group_by="type")
+
+for row in types:
+    request_type = row.group_keys["request_type"]
+    count = row.metrics["count_requests"]
+    print(f"{request_type}: {count} requests")
+```
+
+### Custom Metrics
+
+```python
+daily = await client.aggregate(
+    group_by="day",
+    metrics=["sum_total", "sum_input", "sum_output", "count_requests"]
+)
+```
+
+### Filtered Aggregates
+
+```python
+from datetime import datetime, timedelta, timezone
+
+time_from = datetime.now(timezone.utc) - timedelta(days=30)
+daily = await client.aggregate(
+    group_by="day",
+    project="my_app",
+    time_from=time_from
+)
+```
+
+## Deletion
+
+<Warning>
+  Deletion is permanent and cannot be undone. Always test with `simulate=True`
+  first.
+</Warning>
+
+### Delete All Project Data
+
+```python
+result = await client.delete("old_project")
+print(f"Deleted {result.events_deleted} events")
+```
+
+### Delete with Time Range
+
+```python
+from datetime import datetime, timedelta, timezone
+
+old_date = datetime.now(timezone.utc) - timedelta(days=365)
+result = await client.delete(
+    "my_app",
+    time_to=old_date,
+    include_aggregates=True
+)
+
+print(f"Deleted {result.events_deleted} events")
+print(f"Deleted {result.aggregates_deleted} aggregates")
+```
+
+## Run the Example
+
+```bash
+# Make sure Redis is running, then:
+uv run python examples/basic_usage.py
+```
+
+## Run Tests
+
+```bash
+uv run pytest tests/test_models.py -v
+```
+
+## Advanced Usage (Power Users)
+
+<Accordion title="Advanced API Usage">
+If you need fine-grained control, you can still import the detailed classes:
+
+```python
+from token_usage_metrics import TokenUsageClient
+from token_usage_metrics.config import Settings
+from token_usage_metrics.models import (
+    UsageEvent,
+    UsageFilter,
+    AggregateSpec,
+    AggregateMetric,
+    DeleteOptions
+)
+
+# Use Settings object for detailed configuration
+settings = Settings(
+    backend="redis",
+    redis_url="redis://localhost:6379/0",
+    buffer_size=1000,
+    flush_interval=1.0,
+    max_retries=3
+)
+
+client = TokenUsageClient(settings)
+await client.start()
+
+# Create UsageEvent objects manually
+event = UsageEvent(
+    project_name="my_app",
+    request_type="chat",
+    input_tokens=100,
+    output_tokens=50
+)
+await client.log(event)
+
+# Use detailed filter objects
+filters = UsageFilter(project_name="my_app", limit=100)
+events, cursor = await client.fetch_raw(filters)
+```
+
+</Accordion>
+
+## Package Structure
+
+```
+token-usage-metrics/
+├── token_usage_metrics/     # Main package
+│   ├── client.py           # TokenUsageClient API (simplified + advanced)
+│   ├── models.py           # Data models (for power users)
+│   ├── config.py           # Settings (for power users)
+│   ├── queue.py            # Async buffering
+│   ├── logging.py          # Structured logging
+│   ├── errors.py           # Custom exceptions
+│   └── backends/           # Storage backends
+│       ├── base.py         # Abstract interface
+│       ├── redis.py        # Redis implementation
+│       ├── postgres.py     # PostgreSQL implementation
+│       └── mongodb.py      # MongoDB implementation
+├── tests/                   # Test suite
+├── examples/                # Usage examples
+├── docs/                    # Documentation
+├── README.md                # Main documentation
+└── pyproject.toml          # Package configuration
+```
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card title="Minimal SDK" icon="code">
+    3-line setup, no object boilerplate
+  </Card>
+  <Card title="Async & Non-blocking" icon="bolt">
+    Background flushing, never blocks your app
+  </Card>
+  <Card title="Multi-backend" icon="database">
+    Redis, Postgres, MongoDB with unified API
+  </Card>
+  <Card title="Lifetime Retention" icon="infinity">
+    No enforced TTL, explicit deletion only
+  </Card>
+  <Card title="Rich Queries" icon="magnifying-glass">
+    Raw events, daily/project/type aggregates, time-series
+  </Card>
+  <Card title="Production-ready" icon="shield-check">
+    Circuit breakers, retries, structured logging
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="API Reference" icon="code" href="/api-reference/overview">
+    Explore the complete API documentation
+  </Card>
+  <Card title="Backend Setup" icon="server" href="/backends/redis">
+    Configure your preferred backend
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/architecture">
+    Understand the system design
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/advanced/configuration">
+    Fine-tune for your use case
+  </Card>
+</CardGroup>

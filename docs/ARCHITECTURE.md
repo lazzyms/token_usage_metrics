@@ -2,7 +2,7 @@
 
 ## System Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                    Your Application                         │
 │                                                             │
@@ -27,10 +27,10 @@
      │       (ABC)           │
      └───────────┬───────────┘
                  │
-    ┌────────────┼────────────┐
-    │            │            │
-┌───▼────┐  ┌───▼─────┐  ┌──▼──────┐
-│ Redis  │  │Postgres │  │ MongoDB │
+   ┌────────────┼────────────┼────────────┐
+   │            │            │            │
+┌───▼────┐  ┌───▼─────┐  ┌───▼────┐  ┌──▼──────┐
+│ Redis  │  │Postgres │  │Supabase │  │ MongoDB │
 └────────┘  └─────────┘  └─────────┘
 ```
 
@@ -69,10 +69,10 @@
 
 **Flow:**
 
-```
+```text
 Event → Enqueue → Buffer → Background Flush → Backend
-                    ↓
-            Drop if full (logged)
+          ↓
+       Drop if full (logged)
 ```
 
 ### 3. CircuitBreaker
@@ -87,7 +87,7 @@ Event → Enqueue → Buffer → Background Flush → Backend
 
 **Transitions:**
 
-```
+```text
 Closed ─[threshold failures]→ Open
    ↑                            │
    │                            │
@@ -113,23 +113,23 @@ Closed ─[threshold failures]→ Open
 
 **Schema:**
 
-```
+```text
 Event Storage:
-  tum:e:{id} → Hash {
-    id, ts, project, type,
-    input, output, total, count, metadata
-  }
+   tum:e:{id} → Hash {
+      id, ts, project, type,
+      input, output, total, count, metadata
+   }
 
 Indexes (Day-Partitioned ZSETs):
-  tum:ts:{YYYYMMDD} → {id: timestamp_score}
-  tum:proj:{project}:{YYYYMMDD} → {id: timestamp_score}
-  tum:type:{type}:{YYYYMMDD} → {id: timestamp_score}
+   tum:ts:{YYYYMMDD} → {id: timestamp_score}
+   tum:proj:{project}:{YYYYMMDD} → {id: timestamp_score}
+   tum:type:{type}:{YYYYMMDD} → {id: timestamp_score}
 
 Daily Aggregates (Hashes):
-  tum:agg:{YYYYMMDD} → {input_tokens, output_tokens, ...}
-  tum:agg:{YYYYMMDD}:proj:{project} → {...}
-  tum:agg:{YYYYMMDD}:type:{type} → {...}
-  tum:agg:{YYYYMMDD}:proj:{p}:type:{t} → {...}
+   tum:agg:{YYYYMMDD} → {input_tokens, output_tokens, ...}
+   tum:agg:{YYYYMMDD}:proj:{project} → {...}
+   tum:agg:{YYYYMMDD}:type:{type} → {...}
+   tum:agg:{YYYYMMDD}:proj:{p}:type:{t} → {...}
 ```
 
 **Write Path:**
@@ -211,6 +211,10 @@ CREATE INDEX idx_usage_events_project_type_ts
 - Slower writes than Redis
 - Index maintenance overhead
 
+### Supabase Backend
+
+Supabase exposes a managed Postgres database, so the implementation mirrors the Postgres backend. Configure `supabase_dsn` with the Supabase Postgres connection string (service role key for writes) to reuse the same `usage_events` and `daily_aggregates` tables.
+
 ### MongoDB Backend
 
 **Schema:**
@@ -277,7 +281,7 @@ db.daily_aggregates.createIndex(
 
 ### Logging Event
 
-```
+```text
 1. User calls client.log(event)
    ↓
 2. Validate event (Pydantic)
@@ -299,7 +303,7 @@ db.daily_aggregates.createIndex(
 
 ### Querying Events
 
-```
+```text
 1. User calls client.fetch_raw(filters)
    ↓
 2. Backend.fetch_raw(filters)
@@ -315,7 +319,7 @@ db.daily_aggregates.createIndex(
 
 ### Aggregation
 
-```
+```text
 1. User calls client.summary_by_day(spec, filters)
    ↓
 2. Backend.summary_by_day(spec, filters)
@@ -380,7 +384,7 @@ Prevents blocking on backend slowness.
 | Postgres | ~2,000     | ~10,000   | <20ms         |
 | MongoDB  | ~5,000     | ~8,000    | <10ms         |
 
-_Note: Depends on hardware, network, and load_
+> Note: Depends on hardware, network, and load
 
 ### Memory Usage
 

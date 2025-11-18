@@ -1,0 +1,397 @@
+---
+title: PostgreSQL Backend
+description: "Setup and configuration for PostgreSQL backend"
+icon: "database"
+---
+
+## Overview
+
+PostgreSQL backend provides ACID transactions, powerful SQL queries, and disk-based storage for long-term retention. Ideal for applications requiring complex queries and data durability.
+
+<CardGroup cols={2}>
+  <Card title="Performance" icon="gauge-high">
+    ~2,000 writes/sec ~10,000 reads/sec
+  </Card>
+  <Card title="Latency" icon="clock">
+    &lt;20ms (p99)
+  </Card>
+</CardGroup>
+
+## Installation
+
+```bash
+uv add token-usage-metrics[postgres]
+```
+
+This installs the async PostgreSQL driver (`asyncpg`).
+
+## Setup
+
+### Docker (Recommended for Development)
+
+```bash
+# Start PostgreSQL
+docker run -d -p 5432:5432 \
+  --name postgres-tum \
+  -e POSTGRES_PASSWORD=yourpassword \
+  -e POSTGRES_DB=token_usage \
+  postgres:16-alpine
+
+# With volume for persistence
+docker run -d -p 5432:5432 \
+  -v postgres-data:/var/lib/postgresql/data \
+  --name postgres-tum \
+  -e POSTGRES_PASSWORD=yourpassword \
+  -e POSTGRES_DB=token_usage \
+  postgres:16-alpine
+```
+
+### Production Options
+
+<Tabs>
+  <Tab title="AWS RDS">
+    ```python settings = Settings( backend="postgres",
+    postgres_dsn="postgresql://user:pass@your-instance.region.rds.amazonaws.com:5432/token_usage"
+    ) ```
+  </Tab>
+
+  <Tab title="Google Cloud SQL">
+    ```python settings = Settings( backend="postgres",
+    postgres_dsn="postgresql://user:pass@/token_usage?host=/cloudsql/project:region:instance"
+    ) ```
+  </Tab>
+
+  <Tab title="Azure Database">
+    ```python settings = Settings( backend="postgres",
+    postgres_dsn="postgresql://user@server:pass@server.postgres.database.azure.com:5432/token_usage"
+    ) ```
+  </Tab>
+
+  <Tab title="Self-Hosted">
+    ```bash # Install PostgreSQL sudo apt-get install postgresql
+    postgresql-contrib # Create database sudo -u postgres createdb token_usage
+    sudo -u postgres createuser youruser sudo -u postgres psql -c "GRANT ALL ON
+    DATABASE token_usage TO youruser" ```
+  </Tab>
+</Tabs>
+
+## Configuration
+
+### Basic Configuration
+
+```python
+from token_usage_metrics import Settings
+
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage"
+)
+```
+
+### Advanced Configuration
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Connection pooling
+    postgres_pool_min_size=2,
+    postgres_pool_max_size=10,
+
+    # Timeouts
+    postgres_command_timeout=30.0,
+    postgres_connect_timeout=10.0,
+
+    # Performance
+    buffer_size=1000,
+    flush_interval=1.0,
+    flush_batch_size=200
+)
+```
+
+### Environment Variables
+
+```bash
+export TUM_BACKEND=postgres
+export TUM_POSTGRES_DSN=postgresql://user:pass@localhost:5432/token_usage
+export TUM_POSTGRES_POOL_MAX_SIZE=10
+```
+
+## Schema
+
+Tables are automatically created on first connection.
+
+### usage_events Table
+
+```sql
+CREATE TABLE usage_events (
+    id TEXT PRIMARY KEY,
+    timestamp TIMESTAMPTZ NOT NULL,
+    project_name TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    request_count INTEGER NOT NULL,
+    metadata JSONB
+);
+
+-- Indexes for efficient queries
+CREATE INDEX idx_usage_events_timestamp
+    ON usage_events (timestamp);
+
+CREATE INDEX idx_usage_events_project_ts
+    ON usage_events (project_name, timestamp);
+
+CREATE INDEX idx_usage_events_type_ts
+    ON usage_events (request_type, timestamp);
+
+CREATE INDEX idx_usage_events_project_type_ts
+    ON usage_events (project_name, request_type, timestamp);
+```
+
+### daily_aggregates Table
+
+```sql
+CREATE TABLE daily_aggregates (
+    date DATE NOT NULL,
+    project_name TEXT,
+    request_type TEXT,
+    input_tokens BIGINT NOT NULL DEFAULT 0,
+    output_tokens BIGINT NOT NULL DEFAULT 0,
+    total_tokens BIGINT NOT NULL DEFAULT 0,
+    request_count BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (date, project_name, request_type)
+);
+```
+
+## Write Path
+
+<Steps>
+  <Step title="Batch Insert Events">
+    ```sql INSERT INTO usage_events (id, timestamp, project_name, ...) VALUES
+    ($1, $2, $3, ...), ($4, $5, $6, ...), ... ```
+  </Step>
+
+  <Step title="Upsert Aggregates">
+    ```sql INSERT INTO daily_aggregates (date, project_name, request_type, ...)
+    VALUES ($1, $2, $3, ...) ON CONFLICT (date, project_name, request_type) DO
+    UPDATE SET input_tokens = daily_aggregates.input_tokens +
+    EXCLUDED.input_tokens, output_tokens = daily_aggregates.output_tokens +
+    EXCLUDED.output_tokens, ... ```
+  </Step>
+</Steps>
+
+## Read Path
+
+### Raw Event Query
+
+```sql
+SELECT * FROM usage_events
+WHERE project_name = $1
+  AND timestamp >= $2
+  AND timestamp < $3
+ORDER BY timestamp
+LIMIT $4
+OFFSET $5;
+```
+
+### Aggregate Query
+
+```sql
+SELECT
+  date,
+  SUM(input_tokens) as sum_input,
+  SUM(output_tokens) as sum_output,
+  SUM(total_tokens) as sum_total,
+  SUM(request_count) as count_requests
+FROM daily_aggregates
+WHERE project_name = $1
+  AND date >= $2
+  AND date <= $3
+GROUP BY date
+ORDER BY date;
+```
+
+## Performance Tuning
+
+### Index Optimization
+
+```sql
+-- Add covering indexes for common queries
+CREATE INDEX idx_usage_events_project_ts_covering
+    ON usage_events (project_name, timestamp)
+    INCLUDE (input_tokens, output_tokens, total_tokens);
+
+-- Partial indexes for recent data
+CREATE INDEX idx_usage_events_recent
+    ON usage_events (timestamp)
+    WHERE timestamp > NOW() - INTERVAL '30 days';
+```
+
+### Connection Pooling
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Tune for your workload
+    postgres_pool_min_size=5,
+    postgres_pool_max_size=20
+)
+```
+
+### Batch Size Tuning
+
+```python
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Larger batches for better throughput
+    flush_batch_size=500,
+
+    # Larger buffer
+    buffer_size=2000
+)
+```
+
+## Data Retention
+
+### Automatic Cleanup with Partitioning
+
+<Tip>Use table partitioning for efficient data retention</Tip>
+
+```sql
+-- Create partitioned table
+CREATE TABLE usage_events_partitioned (
+    id TEXT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    project_name TEXT NOT NULL,
+    request_type TEXT NOT NULL,
+    input_tokens INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    total_tokens INTEGER NOT NULL,
+    request_count INTEGER NOT NULL,
+    metadata JSONB,
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
+
+-- Create monthly partitions
+CREATE TABLE usage_events_2024_01
+    PARTITION OF usage_events_partitioned
+    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+
+CREATE TABLE usage_events_2024_02
+    PARTITION OF usage_events_partitioned
+    FOR VALUES FROM ('2024-02-01') TO ('2024-03-01');
+
+-- Drop old partitions
+DROP TABLE usage_events_2024_01;
+```
+
+### Manual Cleanup
+
+```python
+from datetime import datetime, timedelta, timezone
+
+async def cleanup_old_data(client: TokenUsageClient):
+    """Delete data older than 90 days"""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+
+    projects = ["project1", "project2"]
+
+    for project in projects:
+        result = await client.delete(
+            project,
+            time_to=cutoff,
+            include_aggregates=True
+        )
+        print(f"Deleted {result.events_deleted} events for {project}")
+```
+
+## Monitoring
+
+### Check Table Sizes
+
+```sql
+SELECT
+    relname as table_name,
+    pg_size_pretty(pg_total_relation_size(relid)) as total_size,
+    pg_size_pretty(pg_relation_size(relid)) as table_size,
+    pg_size_pretty(pg_total_relation_size(relid) - pg_relation_size(relid)) as indexes_size
+FROM pg_catalog.pg_statio_user_tables
+WHERE schemaname = 'public'
+ORDER BY pg_total_relation_size(relid) DESC;
+```
+
+### Query Performance
+
+```sql
+-- Enable query logging
+ALTER DATABASE token_usage SET log_min_duration_statement = 1000; -- 1 second
+
+-- Check slow queries
+SELECT query, calls, total_time, mean_time
+FROM pg_stat_statements
+ORDER BY mean_time DESC
+LIMIT 10;
+```
+
+### Connection Pool Stats
+
+```python
+# Get client stats
+stats = client.get_stats()
+print(f"Queue size: {stats['queue_size']}")
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection Pool Exhausted">
+    **Symptom:** `asyncpg.exceptions.TooManyConnectionsError` **Solution:** -
+    Increase `postgres_pool_max_size` - Check for connection leaks - Ensure
+    proper use of context managers
+  </Accordion>
+
+  <Accordion title="Slow Inserts">
+    **Symptom:** High write latency **Solution:** - Increase `flush_batch_size`
+    - Check index overhead - Consider UNLOGGED tables for temporary data - Tune
+    `shared_buffers` and `work_mem`
+  </Accordion>
+
+  <Accordion title="Slow Queries">
+    **Symptom:** High read latency **Solution:** - Add missing indexes - Run
+    `VACUUM ANALYZE` regularly - Consider materialized views for aggregates -
+    Increase `effective_cache_size`
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Connection Pooling" icon="link">
+    Configure pool size based on workload
+  </Card>
+  <Card title="Monitor Performance" icon="gauge">
+    Use `pg_stat_statements` extension
+  </Card>
+  <Card title="Regular Maintenance" icon="wrench">
+    Run VACUUM and ANALYZE periodically
+  </Card>
+  <Card title="Table Partitioning" icon="table">
+    Use for efficient data retention
+  </Card>
+</CardGroup>
+
+<CardGroup cols={2}>
+  <Card title="Previous: Redis" icon="bolt" href="/backends/redis">
+    Redis backend documentation
+  </Card>
+  <Card title="Next: Supabase" icon="cloud" href="/backends/supabase">
+    Supabase backend documentation
+  </Card>
+</CardGroup>

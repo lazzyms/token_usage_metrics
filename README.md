@@ -1,10 +1,10 @@
 # Token Usage Metrics
 
-A lightweight, async-first Python package for tracking LLM and embedding token usage with multi-backend support (Redis, PostgreSQL, MongoDB). Built for production with lifetime retention, project-based deletion, comprehensive aggregations, and non-blocking async operations.
+A lightweight, async-first Python package for tracking LLM and embedding token usage with multi-backend support (Redis, PostgreSQL/Supabase, MongoDB). Built for production with lifetime retention, project-based deletion, comprehensive aggregations, and non-blocking async operations.
 
 ## Features
 
-✨ **Multi-Backend Support**: Redis, PostgreSQL, and MongoDB backends with unified API
+✨ **Multi-Backend Support**: Redis, PostgreSQL, Supabase, and MongoDB backends with unified API
 📊 **Rich Aggregations**: Daily summaries, project/type grouping, and time-series for dashboards
 🚀 **Async-First**: Non-blocking operations with background flushing and circuit breakers
 💾 **Lifetime Retention**: No enforced TTL; explicit project-based deletion with date ranges
@@ -27,53 +27,57 @@ uv add token-usage-metrics[mongo]     # MongoDB
 
 ## Quick Start
 
+**Simple 3-line example:**
+
 ```python
 import asyncio
-from datetime import datetime, timezone
-from token_usage_metrics import TokenUsageClient, UsageEvent, Settings
+from token_usage_metrics import TokenUsageClient
 
 async def main():
-    # Create client with Redis (default)
-    settings = Settings(
-        backend="redis",
-        redis_url="redis://localhost:6379/0"
-    )
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+    await client.log("my_app", "chat", input_tokens=100, output_tokens=50)
 
-    async with TokenUsageClient(settings) as client:
-        # Log token usage (async, non-blocking)
-        event = UsageEvent(
-            project_name="my_app",
-            request_type="chat",
-            input_tokens=100,
-            output_tokens=50,
-            total_tokens=150,  # Optional: auto-calculated if omitted
-            request_count=1,
-            metadata={"model": "gpt-4", "user_id": "user_123"}
-        )
-
-        await client.log(event)
-
-        # Fetch raw events with filters
-        from token_usage_metrics import UsageFilter
-
-        filters = UsageFilter(
-            project_name="my_app",
-            time_from=datetime.now(timezone.utc) - timedelta(days=7)
-        )
-
-        events, cursor = await client.fetch_raw(filters)
-        print(f"Found {len(events)} events")
-
-        # Get daily aggregates for graphs
-        from token_usage_metrics import AggregateSpec
-
-        spec = AggregateSpec()
-        daily_data = await client.summary_by_day(spec, filters)
-
-        for bucket in daily_data:
-            print(f"{bucket.start.date()}: {bucket.metrics}")
+    events, _ = await client.query(project="my_app")
+    print(f"Found {len(events)} events")
+    await client.aclose()
 
 asyncio.run(main())
+```
+
+**With more features:**
+
+```python
+from datetime import datetime, timedelta, timezone
+
+async def main():
+    client = await TokenUsageClient.init("redis://localhost:6379/0")
+
+    # Log usage
+    await client.log(
+        "chatbot", "chat",
+        input_tokens=100, output_tokens=50,
+        metadata={"model": "gpt-4"}
+    )
+
+    # Query events
+    events, _ = await client.query(project="chatbot")
+
+    # Get daily aggregates
+    daily = await client.aggregate(
+        group_by="day",
+        time_from=datetime.now(timezone.utc) - timedelta(days=7)
+    )
+
+    await client.aclose()
+```
+
+### Supabase example
+
+```python
+settings = Settings(
+    backend="supabase",
+    supabase_dsn="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres"
+)
 ```
 
 ## Configuration
@@ -85,7 +89,7 @@ from token_usage_metrics import Settings
 
 settings = Settings(
     # Backend selection
-    backend="redis",  # redis | postgres | mongodb
+    backend="redis",  # redis | postgres | supabase | mongodb
 
     # Redis settings
     redis_url="redis://localhost:6379/0",
@@ -93,6 +97,9 @@ settings = Settings(
 
     # Postgres settings
     postgres_dsn="postgresql://user:pass@localhost:5432/token_usage",
+
+    # Supabase settings
+    supabase_dsn="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres",
 
     # MongoDB settings
     mongodb_url="mongodb://localhost:27017",
@@ -141,6 +148,16 @@ docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=token_usage 
 ```
 
 **Schema**: `usage_events` table + `daily_aggregates` table with indexes on `(project, timestamp)`, `(type, timestamp)`.
+
+### Supabase
+
+Supabase exposes the same Postgres-compatible `usage_events` and `daily_aggregates` schema. Provide the Postgres connection string (including the service role key) via `supabase_dsn` so the client can connect securely.
+
+```bash
+# Example Supabase credentials
+export TUM_BACKEND=supabase
+export TUM_SUPABASE_DSN="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres"
+```
 
 ### MongoDB
 
@@ -240,7 +257,7 @@ result = await client.delete_project(options)
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     TokenUsageClient                        │
 │  (Async API: log, fetch_raw, summary_*, delete_project)    │
@@ -254,11 +271,11 @@ result = await client.delete_project(options)
      │   Backend Interface   │
      └───────────┬───────────┘
                  │
-    ┌────────────┼────────────┐
-    │            │            │
-┌───▼────┐  ┌───▼─────┐  ┌──▼──────┐
-│ Redis  │  │Postgres │  │ MongoDB │
-└────────┘  └─────────┘  └─────────┘
+    ┌────────────┼────────────┼────────────┐
+    │            │            │            │
+┌───▼────┐  ┌───▼─────┐  ┌───▼────┐  ┌──▼──────┐
+│ Redis  │  │Postgres │  │Supabase │  │ MongoDB │
+└────────┘  └─────────┘  └─────────┘  └─────────┘
 ```
 
 - **Async Queue**: Buffers events in memory, flushes batches periodically

@@ -560,6 +560,9 @@ postgres = [
 redis = [
     { name = "redis" },
 ]
+supabase = [
+    { name = "asyncpg" },
+]
 test = [
     { name = "anyio" },
     { name = "fakeredis", extra = ["lua"] },
@@ -581,6 +584,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "asyncpg", marker = "extra == 'all'", specifier = ">=0.29.0" },
     { name = "asyncpg", marker = "extra == 'postgres'", specifier = ">=0.29.0" },
+    { name = "asyncpg", marker = "extra == 'supabase'", specifier = ">=0.29.0" },
     { name = "fakeredis", extras = ["lua"], marker = "extra == 'test'", specifier = ">=2.23.0" },
     { name = "motor", specifier = ">=3.7.1" },
     { name = "motor", marker = "extra == 'all'", specifier = ">=3.4.0" },
@@ -599,7 +603,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9.0.0" },
     { name = "typing-extensions", specifier = ">=4.12.0" },
 ]
-provides-extras = ["redis", "postgres", "mongo", "all", "logging", "test", "dev"]
+provides-extras = ["redis", "postgres", "mongo", "all", "supabase", "logging", "test", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
