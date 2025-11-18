@@ -28,17 +28,17 @@ jobs:
 
       - name: Install uv
         uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
 
       - name: Build release distributions
-        run: uv build
+        run: |
+          cd token-usage-metrics
+          uv build
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
         with:
           name: release-dists
-          path: dist/
+          path: token-usage-metrics/dist/
 
   pypi-publish:
     runs-on: ubuntu-latest
