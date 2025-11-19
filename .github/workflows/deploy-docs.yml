@@ -1,0 +1,51 @@
+name: Build and deploy Mintlify docs to GitHub Pages
+
+on:
+    push:
+        branches:
+            - master
+
+permissions:
+    contents: read
+    pages: write
+    id-token: write
+
+concurrency:
+    group: deploy-pages
+    cancel-in-progress: true
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        name: Build docs with Mintlify
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: "18"
+
+            - name: Install Mintlify CLI
+              run: |
+                  npm install -g @mintlify/cli@latest || true
+
+            - name: Build docs
+              # The Mintlify CLI will read `docs/mint.json` by default. Adjust flags if your config differs.
+              run: |
+                  # try running the mintlify CLI; produce output into `site/`
+                  npx @mintlify/cli@latest build --source docs --output site || npx mintlify build --source docs --output site
+
+            - name: Upload built site for Pages
+              uses: actions/upload-pages-artifact@v1
+              with:
+                  path: site
+
+    deploy:
+        needs: build
+        runs-on: ubuntu-latest
+        name: Deploy to GitHub Pages
+        steps:
+            - name: Deploy to GitHub Pages
+              uses: actions/deploy-pages@v1
