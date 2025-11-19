@@ -1,8 +1,6 @@
-# Token Usage Metrics — Quick Start & Setup
+# Token Usage Metrics
 
-## Overview
-
-Token Usage Metrics is a production-ready, async-first Python package for tracking LLM and embedding token usage with multi-backend support (Redis, PostgreSQL/Supabase, MongoDB). It provides lifetime retention, project-based deletion, rich aggregations, and non-blocking async operations for high-throughput environments.
+A production-ready, async-first Python package for tracking LLM and embedding token usage with multi-backend support (Redis, PostgreSQL/Supabase, MongoDB). It provides lifetime retention, project-based deletion, rich aggregations, and non-blocking async operations for high-throughput environments.
 
 ## Features
 
@@ -13,7 +11,13 @@ Token Usage Metrics is a production-ready, async-first Python package for tracki
 - **Flexible Queries:** Raw event fetching with filters and cursor-based pagination.
 - **Production-Ready:** Structured logging, retry logic, graceful fallbacks, and health checks.
 
-## Installation
+---
+
+# Documentation
+
+## 1. Quick Start and Setup
+
+### Installation
 
 Install with Redis support (recommended for getting started):
 
@@ -32,9 +36,12 @@ uv add token-usage-metrics[postgres]
 
 # MongoDB only
 uv add token-usage-metrics[mongo]
+
+# Supabase only
+uv add token-usage-metrics[supabase]
 ```
 
-## Quick Start with Redis
+### Basic Example with Redis
 
 1. Start Redis (using Docker):
 
@@ -42,15 +49,14 @@ uv add token-usage-metrics[mongo]
 docker run -d -p 6379:6379 redis:7-alpine
 ```
 
-1. Create a simple script:
+2. Create a simple script:
 
 ```python
 import asyncio
-from token_usage_metrics import TokenUsageClient
+from token_usage_metrics import TokenUsageClient, Settings
 
 async def main():
-    # Initialize client
-    from token_usage_metrics import Settings
+    # Initialize client with Redis
     settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
     client = await TokenUsageClient.from_settings(settings)
 
@@ -66,59 +72,86 @@ async def main():
 asyncio.run(main())
 ```
 
-1. Run it:
+3. Run it:
 
 ```bash
 python your_script.py
 # Output: Found 1 events
 ```
 
-## Complete Example
+## 2. Supported Databases
 
-```python
-import asyncio
-from datetime import datetime, timedelta, timezone
-from token_usage_metrics import TokenUsageClient
+### 2.1 Redis
 
-async def main():
-    # Initialize client
-    from token_usage_metrics import Settings
-    settings = Settings(backend="redis", redis_url="redis://localhost:6379/0")
-    client = await TokenUsageClient.from_settings(settings)
+Docker:
 
-    # Log multiple events with metadata
-    await client.log(
-        "chatbot", "chat",
-        input_tokens=100, output_tokens=50,
-        metadata={"model": "gpt-4", "user": "alice"}
-
-    ## Testing
-
-    Run tests with `pytest`:
-        metadata={"model": "text-embedding-ada-002"}
-    )
-
-    # Query all events for the project
-    events, _ = await client.query(project="chatbot")
-    print(f"Total events: {len(events)}")
-
-    # Get daily aggregates for the last 7 days
-    daily = await client.aggregate(
-        group_by="day",
-        time_from=datetime.now(timezone.utc) - timedelta(days=7)
-    )
-
-    print("\nDaily Usage:")
-    for bucket in daily:
-        print(f"{bucket.start.date()}: {bucket.metrics}")
-
-    # Clean up
-    await client.aclose()
-
-asyncio.run(main())
+```bash
+docker run -d -p 6379:6379 redis:7-alpine
 ```
 
-## Configuration
+**Schema:** Hash-per-event + day-partitioned ZSETs + daily aggregate hashes. Optimized for fast writes and efficient date-range queries.
+
+**Performance:** ~10k writes/sec (pipelined batches), ~5k reads/sec (optimized ZSETs)
+
+### 2.2 PostgreSQL
+
+Docker:
+
+```bash
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=token_usage postgres:16-alpine
+```
+
+**Schema:** `usage_events` table + `daily_aggregates` table with indexes on `(project, timestamp)` and `(type, timestamp)`.
+
+**Performance:** ~2k writes/sec (bulk inserts), ~10k reads/sec (indexed queries)
+
+Configuration:
+
+```python
+from token_usage_metrics import Settings
+
+settings = Settings(
+    backend="postgres",
+    postgres_dsn="postgresql://user:pass@localhost:5432/token_usage"
+)
+```
+
+### 2.3 MongoDB
+
+Docker:
+
+```bash
+docker run -d -p 27017:27017 mongo:7
+```
+
+**Schema:** `usage_events` collection + `daily_aggregates` collection with compound indexes.
+
+**Performance:** ~5k writes/sec (batched inserts), ~8k reads/sec (indexed scans)
+
+Configuration:
+
+```python
+from token_usage_metrics import Settings
+
+settings = Settings(
+    backend="mongodb",
+    mongodb_url="mongodb://localhost:27017",
+    mongodb_database="token_usage"
+)
+```
+
+### 2.4 Supabase
+
+Supabase exposes the same Postgres-compatible `usage_events` and `daily_aggregates` schema.
+
+Configuration:
+
+```bash
+export TUM_BACKEND=supabase
+export TUM_SUPABASE_DSN="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres"
+```
+
+## 3. Configuration
 
 Configure via environment variables (prefix: `TUM_`) or the `Settings` object:
 
@@ -150,80 +183,67 @@ TUM_BUFFER_SIZE=1000
 TUM_FLUSH_INTERVAL=1.0
 ```
 
-## Backend Setup
+## 4. API Reference
 
-### Redis
+### Methods and Models
 
-Docker:
+#### TokenUsageClient
 
-```bash
-docker run -d -p 6379:6379 redis:7-alpine
+Main client for interacting with the token usage tracking system.
+
+**Initialization:**
+
+```python
+client = await TokenUsageClient.from_settings(settings)
 ```
 
-Schema: Hash-per-event + day-partitioned ZSETs + daily aggregate hashes. Optimized for fast writes and efficient date-range queries.
-
-### PostgreSQL
-
-Docker:
-
-```bash
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=pass -e POSTGRES_DB=token_usage postgres:16-alpine
-```
-
-Schema: `usage_events` table + `daily_aggregates` table with indexes on `(project, timestamp)` and `(type, timestamp)`.
-
-### Supabase
-
-Supabase exposes the same Postgres-compatible `usage_events` and `daily_aggregates` schema. Provide the Postgres connection string (including the service role key) via `supabase_dsn`.
-
-```bash
-export TUM_BACKEND=supabase
-export TUM_SUPABASE_DSN="postgresql://postgres:service_role_key@db.supabase.co:5432/postgres"
-```
-
-### MongoDB
-
-Docker:
-
-```bash
-docker run -d -p 27017:27017 mongo:7
-```
-
-Schema: `usage_events` collection + `daily_aggregates` collection with compound indexes.
-
-## API Reference
-
-### Logging Events
+#### Logging Events
 
 ```python
 # Single event (async, non-blocking)
-await client.log(event)
+await client.log(
+    project: str,
+    request_type: str,
+    input_tokens: int,
+    output_tokens: int,
+    metadata: dict | None = None
+)
 
 # Multiple events
-await client.log_many([event1, event2, event3])
+await client.log_many(events: list[UsageEvent])
 
 # Force flush pending events
-flushed_count = await client.flush(timeout=5.0)
+flushed_count = await client.flush(timeout: float = 5.0)
 ```
 
-### Fetching Raw Events
+**Arguments:**
+
+- `project` (str): Project identifier
+- `request_type` (str): Type of request (e.g., "chat", "embedding")
+- `input_tokens` (int): Number of input tokens
+- `output_tokens` (int): Number of output tokens
+- `metadata` (dict, optional): Additional context metadata
+
+#### Fetching Raw Events
 
 ```python
 from token_usage_metrics import UsageFilter
 
-filters = UsageFilter(
-    project_name="my_app",
-    request_type="chat",
-    time_from=datetime(...),
-    time_to=datetime(...),
-    limit=100,
-    cursor=None
+events, next_cursor = await client.fetch_raw(
+    filters: UsageFilter
 )
-
-events, next_cursor = await client.fetch_raw(filters)
 ```
 
-### Aggregations & Summaries
+**UsageFilter Arguments:**
+
+- `project_name` (str, optional): Filter by project
+- `request_type` (str, optional): Filter by request type
+- `time_from` (datetime, optional): Start time
+- `time_to` (datetime, optional): End time
+- `limit` (int): Maximum number of events (default: 100)
+- `cursor` (str, optional): Pagination cursor
+
+#### Aggregations & Summaries
 
 ```python
 from token_usage_metrics import AggregateSpec, AggregateMetric
@@ -239,7 +259,15 @@ spec = AggregateSpec(
 daily_buckets = await client.summary_by_day(spec, filters)
 ```
 
-### Deleting Project Data
+**AggregateMetric Options:**
+
+- `SUM_TOTAL`: Sum of all tokens
+- `COUNT_REQUESTS`: Number of requests
+- `AVG_TOTAL_PER_REQUEST`: Average tokens per request
+- `SUM_INPUT_TOKENS`: Sum of input tokens
+- `SUM_OUTPUT_TOKENS`: Sum of output tokens
+
+#### Deleting Project Data
 
 ```python
 from token_usage_metrics import DeleteOptions
@@ -255,7 +283,15 @@ options = DeleteOptions(
 result = await client.delete_project(options)
 ```
 
-## Architecture
+**DeleteOptions Arguments:**
+
+- `project_name` (str): Project to delete
+- `time_from` (datetime): Start of deletion range
+- `time_to` (datetime): End of deletion range
+- `include_aggregates` (bool): Also delete aggregates
+- `simulate` (bool): Dry run without actual deletion
+
+## 5. Architecture
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
@@ -283,7 +319,7 @@ result = await client.delete_project(options)
 - **Retry Logic:** Exponential backoff with jitter for transient errors.
 - **Lifetime Retention:** No enforced TTL (configurable per-backend if needed).
 
-## Testing
+## 6. Testing
 
 Run tests with `pytest`:
 
@@ -298,7 +334,7 @@ uv run pytest --cov=token_usage_metrics
 uv run pytest tests/test_redis_backend.py -v
 ```
 
-## Development
+## 7. Development
 
 ```bash
 # Install dev dependencies
@@ -312,7 +348,7 @@ uv run ruff format .
 uv run mypy token_usage_metrics
 ```
 
-## Performance
+## 8. Performance
 
 - **Redis:** ~10k writes/sec (pipelined batches), ~5k reads/sec (optimized ZSETs)
 - **Postgres:** ~2k writes/sec (bulk inserts), ~10k reads/sec (indexed queries)
@@ -320,13 +356,82 @@ uv run mypy token_usage_metrics
 
 Benchmarks on single-instance deployments. Scale horizontally for higher throughput.
 
-## License
+## 9. Contribution Guidelines
 
-MIT
+We welcome contributions! Please follow these guidelines to ensure a smooth process:
 
-## Contributing
+### Getting Started
 
-Contributions welcome! Please open an issue or PR on GitHub.
+1. **Fork the Repository:** Click the fork button on GitHub.
+2. **Clone Your Fork:**
+   ```bash
+   git clone https://github.com/your-username/token-usage-metrics.git
+   cd token-usage-metrics
+   ```
+3. **Create a Branch:**
+   ```bash
+   git checkout -b feature/your-feature-name
+   ```
+
+### Development Setup
+
+1. **Install Dependencies:**
+   ```bash
+   uv sync
+   uv add --dev ruff mypy pytest pytest-asyncio fakeredis
+   ```
+2. **Run Tests:**
+   ```bash
+   uv run pytest
+   ```
+
+### Code Standards
+
+- **Format Code:** Use ruff for formatting
+  ```bash
+  uv run ruff format .
+  ```
+- **Lint Code:** Check for issues
+  ```bash
+  uv run ruff check .
+  ```
+- **Type Checking:** Ensure type safety
+  ```bash
+  uv run mypy token_usage_metrics
+  ```
+
+### Submitting Changes
+
+1. **Commit Your Changes:**
+   ```bash
+   git add .
+   git commit -m "feat: add your feature description"
+   ```
+2. **Push to Your Fork:**
+   ```bash
+   git push origin feature/your-feature-name
+   ```
+3. **Open a Pull Request:** Go to GitHub and create a PR with a clear description of your changes.
+
+### PR Guidelines
+
+- Ensure all tests pass: `uv run pytest`
+- Include test coverage for new features
+- Update documentation if needed
+- Follow the commit message format: `feat:`, `fix:`, `docs:`, `test:`, etc.
+
+### Reporting Issues
+
+Please use GitHub Issues to report bugs or suggest features. Include:
+
+- Clear description of the issue
+- Steps to reproduce (for bugs)
+- Expected vs. actual behavior
+- Environment details (Python version, backend used, etc.)
+
+Thank you for contributing! 🎉
+
+---
 
 ---
 
