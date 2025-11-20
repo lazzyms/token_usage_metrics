@@ -5,10 +5,6 @@ from typing import Any
 from urllib.parse import urlparse
 
 from token_usage_metrics.backends.base import Backend
-from token_usage_metrics.backends.mongodb import MongoDBBackend
-from token_usage_metrics.backends.postgres import PostgresBackend
-from token_usage_metrics.backends.redis import RedisBackend
-from token_usage_metrics.backends.supabase import SupabaseBackend
 from token_usage_metrics.config import BackendType, Settings
 from token_usage_metrics.errors import BackendError
 from token_usage_metrics.logging import get_logger
@@ -230,6 +226,14 @@ class TokenUsageClient:
     def _create_backend(self) -> Backend:
         """Create backend based on settings."""
         if self.settings.backend == BackendType.REDIS:
+            try:
+                from token_usage_metrics.backends.redis import RedisBackend
+            except ImportError as e:
+                raise ImportError(
+                    "Redis backend requires 'redis' package. "
+                    "Install with: uv add token-usage-metrics[redis]"
+                ) from e
+
             return RedisBackend(
                 redis_url=self.settings.redis_url,
                 pool_size=self.settings.redis_pool_size,
@@ -237,6 +241,14 @@ class TokenUsageClient:
                 socket_connect_timeout=self.settings.redis_socket_connect_timeout,
             )
         elif self.settings.backend == BackendType.POSTGRES:
+            try:
+                from token_usage_metrics.backends.postgres import PostgresBackend
+            except ImportError as e:
+                raise ImportError(
+                    "Postgres backend requires 'asyncpg' package. "
+                    "Install with: uv add token-usage-metrics[postgres]"
+                ) from e
+
             return PostgresBackend(
                 dsn=self.settings.postgres_dsn,
                 min_size=self.settings.postgres_pool_min_size,
@@ -244,6 +256,14 @@ class TokenUsageClient:
                 command_timeout=self.settings.postgres_command_timeout,
             )
         elif self.settings.backend == BackendType.MONGODB:
+            try:
+                from token_usage_metrics.backends.mongodb import MongoDBBackend
+            except ImportError as e:
+                raise ImportError(
+                    "MongoDB backend requires 'motor' package. "
+                    "Install with: uv add token-usage-metrics[mongo]"
+                ) from e
+
             return MongoDBBackend(
                 url=self.settings.mongodb_url,
                 database=self.settings.mongodb_database,
@@ -251,6 +271,14 @@ class TokenUsageClient:
                 timeout=self.settings.mongodb_timeout,
             )
         elif self.settings.backend == BackendType.SUPABASE:
+            try:
+                from token_usage_metrics.backends.supabase import SupabaseBackend
+            except ImportError as e:
+                raise ImportError(
+                    "Supabase backend requires 'asyncpg' package. "
+                    "Install with: uv add token-usage-metrics[supabase]"
+                ) from e
+
             return SupabaseBackend(
                 supabase_dsn=self.settings.supabase_dsn,
                 min_size=self.settings.supabase_pool_min_size,

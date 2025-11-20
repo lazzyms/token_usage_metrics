@@ -1,15 +1,12 @@
 [project]
 name = "token-usage-metrics"
-version = "0.1.1"
+version = "0.1.2"
 description = "Async LLM/embedding token usage tracking with multi-backend support (Redis, Postgres/Supabase, MongoDB)"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.10"
 dependencies = [
-    "asyncpg>=0.30.0",
-    "motor>=3.7.1",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.4.0",
-    "redis>=7.0.1",
     "tenacity>=9.0.0",
     "typing-extensions>=4.12.0",
 ]
